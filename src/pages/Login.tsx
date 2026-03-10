@@ -1,9 +1,20 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import bgLight from '../assets/bg-light.png';
 import logo from '../assets/gridpe-logo.svg';
+import { useAuth } from '../hooks/useAuth';
 
 const Login: React.FC = () => {
     const [mobileNumber, setMobileNumber] = useState('');
+    const navigate = useNavigate();
+    const { setPhoneNumber } = useAuth();
+
+    const handleGetOtp = () => {
+        if (mobileNumber.length === 10) {
+            setPhoneNumber(mobileNumber);
+            navigate('/otp');
+        }
+    };
 
     return (
         <div className="relative h-screen w-full flex flex-col items-center bg-white overflow-hidden font-satoshi">
@@ -61,7 +72,9 @@ const Login: React.FC = () => {
 
                 {/* Primary CTA */}
                 <button
-                    className="mt-[16px] w-full max-w-[362px] h-[48px] bg-primary rounded-full flex items-center justify-center transition-opacity hover:opacity-90 active:scale-[0.98]"
+                    onClick={handleGetOtp}
+                    disabled={mobileNumber.length !== 10}
+                    className={`mt-[16px] w-full max-w-[362px] h-[48px] bg-primary rounded-full flex items-center justify-center transition-opacity hover:opacity-90 active:scale-[0.98] ${mobileNumber.length !== 10 ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                     <span className="text-white text-[16px] font-medium">Get OTP</span>
                 </button>
