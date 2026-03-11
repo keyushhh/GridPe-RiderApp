@@ -132,7 +132,7 @@ const OnboardingHub: React.FC = () => {
 
                 {/* Continue CTA */}
                 <button
-                    onClick={() => console.log('Confirm Hub', selectedHub)}
+                    onClick={() => navigate('/onboarding/guidelines')}
                     className="w-[362px] h-[48px] bg-[#5260FE] rounded-full flex items-center justify-center shrink-0 transition-opacity hover:opacity-90 active:scale-[0.98] mt-[28px]"
                 >
                     <span className="text-white text-[16px] font-medium">Confirm Hub</span>
