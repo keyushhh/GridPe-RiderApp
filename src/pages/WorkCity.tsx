@@ -221,7 +221,7 @@ const WorkCity: React.FC = () => {
                 </div>
 
                 <button
-                    onClick={() => navigate('/')}
+                    onClick={() => navigate('/onboarding/vehicle')}
                     className="mt-[21px] mb-[40px] w-full max-w-[362px] h-[48px] bg-primary rounded-full flex items-center justify-center transition-opacity hover:opacity-90 active:scale-[0.98] shrink-0"
                 >
                     <span className="text-white text-[16px] font-medium">Continue</span>
