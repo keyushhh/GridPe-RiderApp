@@ -74,7 +74,7 @@ const Home = () => {
                             <span 
                                 className="text-[14px] font-medium absolute transition-all duration-300"
                                 style={{ 
-                                    color: isOnline ? "white" : "#737373",
+                                    color: isOnline ? "white" : "#000000",
                                     left: isOnline ? "12px" : "32px"
                                 }}
                             >
