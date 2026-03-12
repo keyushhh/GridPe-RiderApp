@@ -6,20 +6,30 @@ import referralImg from "../assets/referral image.png";
 import homeIcon from "../assets/home.svg";
 import earningsIcon from "../assets/earnings.svg";
 import notificationsIcon from "../assets/notifications.svg";
+import refreshIcon from "../assets/Refresh.svg";
 const Home = () => {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState("home");
     const [isOnline, setIsOnline] = useState(false);
-    const [kycStatus, setKycStatus] = useState<"pending" | "verified">("pending");
+    const [kycStatus, setKycStatus] = useState<"pending" | "verified">(
+        (localStorage.getItem("rider_kyc_status") as "pending" | "verified") || "pending"
+    );
+    const [hasBeenOnline, setHasBeenOnline] = useState(
+        localStorage.getItem("rider_has_been_online") === "true"
+    );
+    const [earnings, setEarnings] = useState(0);
 
     // Simulation: Auto-verify after 2 minutes
     useEffect(() => {
-        const timer = setTimeout(() => {
-            setKycStatus("verified");
-        }, 120000); // 2 minutes
+        if (kycStatus === "pending") {
+            const timer = setTimeout(() => {
+                setKycStatus("verified");
+                localStorage.setItem("rider_kyc_status", "verified");
+            }, 120000); // 2 minutes
 
-        return () => clearTimeout(timer);
-    }, []);
+            return () => clearTimeout(timer);
+        }
+    }, [kycStatus]);
 
     // In a real app, 'Rohit' would come from an auth/profile context
     const riderName = "Rohit";
@@ -56,16 +66,26 @@ const Home = () => {
             <div className="flex-1 w-full overflow-y-auto flex flex-col items-center pb-[120px]">
                 {/* Status Container: Dynamic Content */}
                 <div 
-                    className={`w-[362px] min-h-[140px] rounded-[12px] border border-[#EDEDED] bg-white p-4 z-10 shadow-[0px_2px_8px_0px_rgba(0,0,0,0.04)] mt-[10px] shrink-0 transition-all duration-300`}
+                    className={`w-[362px] ${hasBeenOnline ? "min-h-[198px]" : "min-h-[140px]"} rounded-[12px] border border-[#EDEDED] bg-white p-4 z-10 shadow-[0px_2px_8px_0px_rgba(0,0,0,0.04)] mt-[10px] shrink-0 transition-all duration-300 relative`}
                 >
-                    {/* Toggle Switch: Enabled only if verified */}
-                    <div className="flex items-center mb-[13px]">
+                    {/* Top Row: Toggle + Earnings (if hasBeenOnline) */}
+                    <div className="flex items-center justify-between">
+                        {/* Toggle Switch */}
                         <div 
                             className={`w-[84px] h-[28px] rounded-full flex items-center px-0.5 relative transition-all duration-300 ${
                                 kycStatus === "verified" ? "cursor-pointer" : "cursor-not-allowed opacity-50"
                             }`}
                             style={{ backgroundColor: isOnline ? "#0C7E4B" : "rgba(120, 120, 120, 0.2)" }}
-                            onClick={() => kycStatus === "verified" && setIsOnline(!isOnline)}
+                            onClick={() => {
+                                if (kycStatus === "verified") {
+                                    const nextOnline = !isOnline;
+                                    setIsOnline(nextOnline);
+                                    if (nextOnline && !hasBeenOnline) {
+                                        setHasBeenOnline(true);
+                                        localStorage.setItem("rider_has_been_online", "true");
+                                    }
+                                }
+                            }}
                         >
                             <div 
                                 className="w-[24px] h-[24px] rounded-full bg-white shadow-sm transition-transform duration-300" 
@@ -81,26 +101,57 @@ const Home = () => {
                                 {isOnline ? "online" : "offline"}
                             </span>
                         </div>
+
+                        {hasBeenOnline && (
+                            <span className="text-black text-[18px] font-bold mr-[1px]">
+                                Today's earnings: ₹{earnings}
+                            </span>
+                        )}
                     </div>
 
-                    {/* Status Text */}
-                    <div className="">
-                        <h2 className="text-[20px] font-bold text-black leading-[1.4]">
-                            {kycStatus === "verified" ? (
-                                <>Verification is completed! <br /> You can now go online, and start accepting orders.</>
-                            ) : (
-                                <>Verification is in progress. <br /> You’ll be notified once your KYC is approved.</>
+                    {!hasBeenOnline ? (
+                        <>
+                            {/* Verification State Text */}
+                            <div className="mt-[13px]">
+                                <h2 className="text-[20px] font-bold text-black leading-[1.4]">
+                                    {kycStatus === "verified" ? (
+                                        <>Verification is completed! <br /> You can now go online, and start accepting orders.</>
+                                    ) : (
+                                        <>Verification is in progress. <br /> You’ll be notified once your KYC is approved.</>
+                                    )}
+                                </h2>
+                            </div>
+
+                            {kycStatus === "pending" && (
+                                <p 
+                                    className="text-[14px] font-medium text-black mt-[7px]"
+                                    style={{ lineHeight: "22px", letterSpacing: "-0.43px" }}
+                                >
+                                    (Usually within 30 minutes)
+                                </p>
                             )}
-                        </h2>
-                    </div>
+                        </>
+                    ) : (
+                        <div className="flex flex-col items-center">
+                            {/* Active Session Status Message: 82px from top */}
+                            <p className="absolute top-[82px] text-black text-[14px] font-medium opacity-50 text-center w-[300px]">
+                                {isOnline 
+                                    ? "You’re online. New orders will appear here shortly."
+                                    : "You’re offline, go online now to receive new orders."
+                                }
+                            </p>
 
-                    {kycStatus === "pending" && (
-                        <p 
-                            className="text-[14px] font-medium text-black mt-[7px]"
-                            style={{ lineHeight: "22px", letterSpacing: "-0.43px" }}
-                        >
-                            (Usually within 30 minutes)
-                        </p>
+                            {/* Refresh CTA: 40px below message */}
+                            <button 
+                                disabled={!isOnline}
+                                className={`mt-[96px] w-[193px] h-[42px] rounded-full flex items-center justify-center transition-all duration-300 ${
+                                    isOnline ? "bg-black cursor-pointer active:scale-95" : "bg-[#BDBDBD] cursor-not-allowed"
+                                }`}
+                            >
+                                <span className="text-white text-[14px] font-medium mr-[6px]">Refresh</span>
+                                <img src={refreshIcon} alt="Refresh" className="w-[11px] h-[11px]" />
+                            </button>
+                        </div>
                     )}
                 </div>
 
@@ -131,16 +182,18 @@ const Home = () => {
 
                 {/* Shifts Container: 12px below header */}
                 <div className="w-[362px] h-[113px] rounded-[14px] border border-[#EDEDED] flex items-center justify-center p-6 shrink-0 mb-8 transition-all duration-300">
-                    <p className="text-black text-[14px] font-medium text-center opacity-50">
-                        {kycStatus === "verified" 
-                            ? "Shifts will be visible once you start accepting orders."
-                            : "Your shifts will appear here once your account is verified and active."
+                    <p className="text-black text-[14px] font-medium text-center opacity-50 px-2">
+                        {hasBeenOnline 
+                            ? "Shift details will update automatically as you complete deliveries."
+                            : kycStatus === "verified"
+                                ? "Shifts will be visible once you start accepting orders."
+                                : "Your shifts will appear here once your account is verified and active."
                         }
                     </p>
                 </div>
 
-                {/* New Rider Bonus Banner: Only visible if verified */}
-                {kycStatus === "verified" && (
+                {/* New Rider Bonus Banner: Only visible if verified and NEVER gone online */}
+                {kycStatus === "verified" && !hasBeenOnline && (
                     <div className="w-[362px] h-[110px] rounded-[16px] bg-black shrink-0 relative flex flex-col items-center mb-8">
                         {/* Badge: Half in, half out */}
                         <div className="absolute top-[-16px] left-1/2 -translate-x-1/2 w-[160px] h-[32px] rounded-full bg-[#5260FE] flex items-center justify-center z-10 shadow-sm">

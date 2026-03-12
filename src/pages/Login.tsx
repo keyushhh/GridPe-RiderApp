@@ -9,6 +9,13 @@ const Login: React.FC = () => {
     const navigate = useNavigate();
     const { setPhoneNumber } = useAuth();
 
+    React.useEffect(() => {
+        const kycStatus = localStorage.getItem('rider_kyc_status');
+        if (kycStatus === 'verified') {
+            navigate('/dashboard');
+        }
+    }, [navigate]);
+
     const handleGetOtp = () => {
         if (mobileNumber.length === 10) {
             setPhoneNumber(mobileNumber);
