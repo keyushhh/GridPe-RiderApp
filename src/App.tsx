@@ -6,6 +6,12 @@ import WorkCity from './pages/WorkCity'
 import OnboardingVehicle from './pages/OnboardingVehicle'
 import OnboardingHub from './pages/OnboardingHub'
 import OnboardingGuidelines from './pages/OnboardingGuidelines'
+import OnboardingKYC from './pages/OnboardingKYC'
+import OnboardingKYCUpload from './pages/OnboardingKYCUpload'
+import OnboardingKYCSelfie from './pages/OnboardingKYCSelfie'
+import OnboardingKYCReview from './pages/OnboardingKYCReview'
+import OnboardingKYCSuccess from './pages/OnboardingKYCSuccess'
+import IdentityVerificationInfo from './pages/IdentityVerificationInfo'
 
 function App() {
     return (
@@ -19,6 +25,12 @@ function App() {
                     <Route path="/onboarding/vehicle" element={<OnboardingVehicle />} />
                     <Route path="/onboarding/step-2" element={<OnboardingHub />} />
                     <Route path="/onboarding/guidelines" element={<OnboardingGuidelines />} />
+                    <Route path="/onboarding/kyc" element={<OnboardingKYC />} />
+                    <Route path="/onboarding/kyc-upload" element={<OnboardingKYCUpload />} />
+                    <Route path="/onboarding/kyc-selfie" element={<OnboardingKYCSelfie />} />
+                    <Route path="/onboarding/kyc-review" element={<OnboardingKYCReview />} />
+                    <Route path="/onboarding/kyc-success" element={<OnboardingKYCSuccess />} />
+                    <Route path="/onboarding/identity-info" element={<IdentityVerificationInfo />} />
                 </Routes>
             </Router>
         </AuthProvider>
