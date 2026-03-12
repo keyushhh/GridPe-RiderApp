@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import avatarImg from "../assets/avatar.png";
 import giftIcon from "../assets/gift.svg";
@@ -9,6 +9,17 @@ import notificationsIcon from "../assets/notifications.svg";
 const Home = () => {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState("home");
+    const [isOnline, setIsOnline] = useState(false);
+    const [kycStatus, setKycStatus] = useState<"pending" | "verified">("pending");
+
+    // Simulation: Auto-verify after 2 minutes
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setKycStatus("verified");
+        }, 120000); // 2 minutes
+
+        return () => clearTimeout(timer);
+    }, []);
 
     // In a real app, 'Rohit' would come from an auth/profile context
     const riderName = "Rohit";
@@ -21,11 +32,11 @@ const Home = () => {
 
     return (
         <div className="relative h-[100dvh] w-full bg-white font-satoshi overflow-hidden flex flex-col items-center">
-            {/* Standardized Glowing Orb: Yellow */}
+            {/* Standardized Glowing Orb: Dynamic Color */}
             <div
-                className="absolute top-[-20px] left-1/2 -translate-x-1/2 w-[166px] h-[40px] rounded-full pointer-events-none z-0"
+                className="absolute top-[-20px] left-1/2 -translate-x-1/2 w-[166px] h-[40px] rounded-full pointer-events-none z-0 transition-colors duration-500"
                 style={{
-                    backgroundColor: "#FACC15",
+                    backgroundColor: kycStatus === "verified" ? "#5260FE" : "#FACC15",
                     filter: "blur(60px)",
                     opacity: 0.8,
                 }}
@@ -43,36 +54,54 @@ const Home = () => {
 
             {/* Scrollable Content Area */}
             <div className="flex-1 w-full overflow-y-auto flex flex-col items-center pb-[120px]">
-                {/* Status Container: 148px total from top approx */}
-                <div className="w-[362px] h-[186px] rounded-[12px] border border-[#EDEDED] bg-white p-4 z-10 shadow-[0px_2px_8px_0px_rgba(0,0,0,0.04)] mt-[10px] shrink-0">
-                    {/* Toggle Switch */}
+                {/* Status Container: Dynamic Content */}
+                <div 
+                    className={`w-[362px] min-h-[140px] rounded-[12px] border border-[#EDEDED] bg-white p-4 z-10 shadow-[0px_2px_8px_0px_rgba(0,0,0,0.04)] mt-[10px] shrink-0 transition-all duration-300`}
+                >
+                    {/* Toggle Switch: Enabled only if verified */}
                     <div className="flex items-center mb-[13px]">
                         <div 
-                            className="w-[84px] h-[28px] rounded-full flex items-center px-0.5 relative"
-                            style={{ backgroundColor: "rgba(120, 120, 120, 0.2)" }}
+                            className={`w-[84px] h-[28px] rounded-full flex items-center px-0.5 relative transition-all duration-300 ${
+                                kycStatus === "verified" ? "cursor-pointer" : "cursor-not-allowed opacity-50"
+                            }`}
+                            style={{ backgroundColor: isOnline ? "#0C7E4B" : "rgba(120, 120, 120, 0.2)" }}
+                            onClick={() => kycStatus === "verified" && setIsOnline(!isOnline)}
                         >
-                            <div className="w-[24px] h-[24px] rounded-full bg-white shadow-sm" />
-                            <span className="text-[14px] font-medium text-[#737373] ml-2">
-                                offline
+                            <div 
+                                className="w-[24px] h-[24px] rounded-full bg-white shadow-sm transition-transform duration-300" 
+                                style={{ transform: isOnline ? "translateX(56px)" : "translateX(0)" }}
+                            />
+                            <span 
+                                className="text-[14px] font-medium absolute transition-all duration-300"
+                                style={{ 
+                                    color: isOnline ? "white" : "#737373",
+                                    left: isOnline ? "12px" : "32px"
+                                }}
+                            >
+                                {isOnline ? "online" : "offline"}
                             </span>
                         </div>
                     </div>
 
-                    {/* KYC Progress Text */}
-                    <div className="mb-[7px]">
+                    {/* Status Text */}
+                    <div className="">
                         <h2 className="text-[20px] font-bold text-black leading-[1.4]">
-                            Verification is in progress. <br />
-                            You’ll be notified once your KYC is approved.
+                            {kycStatus === "verified" ? (
+                                <>Verification is completed! <br /> You can now go online, and start accepting orders.</>
+                            ) : (
+                                <>Verification is in progress. <br /> You’ll be notified once your KYC is approved.</>
+                            )}
                         </h2>
                     </div>
 
-                    {/* Sub-text */}
-                    <p 
-                        className="text-[14px] font-medium text-black"
-                        style={{ lineHeight: "22px", letterSpacing: "-0.43px" }}
-                    >
-                        (Usually within 30 minutes)
-                    </p>
+                    {kycStatus === "pending" && (
+                        <p 
+                            className="text-[14px] font-medium text-black mt-[7px]"
+                            style={{ lineHeight: "22px", letterSpacing: "-0.43px" }}
+                        >
+                            (Usually within 30 minutes)
+                        </p>
+                    )}
                 </div>
 
                 {/* Referral Banner: 20px below container */}
@@ -101,11 +130,32 @@ const Home = () => {
                 </div>
 
                 {/* Shifts Container: 12px below header */}
-                <div className="w-[362px] h-[113px] rounded-[14px] border border-[#EDEDED] flex items-center justify-center p-6 shrink-0 mb-8">
+                <div className="w-[362px] h-[113px] rounded-[14px] border border-[#EDEDED] flex items-center justify-center p-6 shrink-0 mb-8 transition-all duration-300">
                     <p className="text-black text-[14px] font-medium text-center opacity-50">
-                        Your shifts will appear here once your account is verified and active.
+                        {kycStatus === "verified" 
+                            ? "Shifts will be visible once you start accepting orders."
+                            : "Your shifts will appear here once your account is verified and active."
+                        }
                     </p>
                 </div>
+
+                {/* New Rider Bonus Banner: Only visible if verified */}
+                {kycStatus === "verified" && (
+                    <div className="w-[362px] h-[110px] rounded-[16px] bg-black shrink-0 relative flex flex-col items-center mb-8">
+                        {/* Badge: Half in, half out */}
+                        <div className="absolute top-[-16px] left-1/2 -translate-x-1/2 w-[160px] h-[32px] rounded-full bg-[#5260FE] flex items-center justify-center z-10 shadow-sm">
+                            <span className="text-white text-[12px] font-bold">First Login Offer!</span>
+                        </div>
+
+                        {/* Banner Content */}
+                        <h3 className="text-white text-[16px] font-bold mt-[31px] mb-1">
+                            New Rider!
+                        </h3>
+                        <p className="text-white text-[12px] font-normal text-center w-[266px] leading-[1.4]">
+                            Complete 5 deliveries today and earn a ₹1500 bonus in your wallet.
+                        </p>
+                    </div>
+                )}
             </div>
 
             {/* Bottom Navigation: 279x62px pill shaped */}
