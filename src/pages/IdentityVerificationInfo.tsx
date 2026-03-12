@@ -6,17 +6,24 @@ const IdentityVerificationInfo = () => {
 
     return (
         <div className="relative h-[100dvh] w-full flex flex-col items-center bg-white font-satoshi overflow-hidden">
-            {/* Glowing Orb: Purple in this screen */}
+            {/* Standardized Glowing Orb: Purple */}
             <div
-                className="absolute top-[-100px] left-1/2 -translate-x-1/2 w-[250px] h-[250px] rounded-full blur-[100px] opacity-30 pointer-events-none z-0 bg-[#5260FE]"
+                className="absolute top-[-20px] left-1/2 -translate-x-1/2 w-[166px] h-[40px] rounded-full pointer-events-none z-0"
+                style={{
+                    backgroundColor: "#5260FE",
+                    filter: "blur(60px)",
+                    opacity: 0.8,
+                }}
             />
 
             {/* Content Container */}
-            <div className="relative z-10 w-full h-full flex flex-col pt-[58px] px-4 pb-10 overflow-y-auto items-center">
-                {/* Heading */}
-                <h1 className="text-[22px] font-bold text-black text-center mb-[15px] shrink-0">
-                    Identity Verification Required
-                </h1>
+            <div className="relative z-10 w-full h-full flex flex-col pb-10 overflow-y-auto items-center">
+                {/* Header Container */}
+                <div className="flex-none flex items-center justify-center w-full px-5 pt-12 pb-2 relative z-10">
+                    <h1 className="text-black text-[18px] font-semibold">
+                        Identity Verification Required
+                    </h1>
+                </div>
 
                 {/* Icon: 15px below heading */}
                 <div className="w-[66px] h-[66px] shrink-0 mb-[15px]">
@@ -77,7 +84,7 @@ const IdentityVerificationInfo = () => {
                 {/* Purple CTA: 220px below disclaimer (using mt-auto to ensure it stays at bottom if content grows) */}
                 <div className="w-[362px] mx-auto mt-auto lg:mt-[220px]">
                     <button
-                        onClick={() => navigate("/dashboard")} // Placeholder or next step
+                        onClick={() => navigate("/dashboard")}
                         className="w-full h-[48px] rounded-full text-[16px] font-medium bg-[#5260FE] transition-opacity hover:opacity-90 active:scale-[0.98] text-white flex items-center justify-center cursor-pointer"
                     >
                         Got it, Continue

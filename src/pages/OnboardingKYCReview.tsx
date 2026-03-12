@@ -39,25 +39,33 @@ const OnboardingKYCReview = () => {
 
     return (
         <div className="relative h-[100dvh] w-full flex flex-col items-center bg-white font-satoshi overflow-hidden">
-            {/* Glowing Orb */}
+            {/* Standardized Glowing Orb: Blue */}
             <div
-                className="absolute top-[-100px] left-1/2 -translate-x-1/2 w-[250px] h-[250px] rounded-full blur-[100px] opacity-30 pointer-events-none z-0 bg-[#5260FE]"
+                className="absolute top-[-20px] left-1/2 -translate-x-1/2 w-[166px] h-[40px] rounded-full pointer-events-none z-0"
+                style={{
+                    backgroundColor: "#5260FE",
+                    filter: "blur(60px)",
+                    opacity: 0.8,
+                }}
             />
 
             {/* Content Container */}
-            <div className="relative z-10 w-full h-full flex flex-col pt-[58px] px-4 pb-6 overflow-y-auto">
-                {/* Header */}
-                <div className="flex items-center justify-between w-full mb-[29px] shrink-0">
-                    <button
+            <div className="relative z-10 w-full h-full flex flex-col pb-6 overflow-y-auto">
+                {/* Header Container */}
+                <div className="flex-none flex items-center justify-between px-5 pt-12 pb-2 relative z-10">
+                    {/* Back Button */}
+                    <button 
                         onClick={() => navigate(-1)}
                         className="w-10 h-10 rounded-full border border-[#E6E8EB] bg-white flex items-center justify-center transition-colors hover:bg-gray-50"
                     >
                         <ChevronLeft className="w-5 h-5 text-black" />
                     </button>
-                    <h1 className="text-[22px] font-medium text-black">
+                    {/* Page Title */}
+                    <h1 className="text-black text-[18px] font-semibold">
                         Onboarding
                     </h1>
-                    <div className="w-10" />
+                    {/* Spacer (to keep Title centered) */}
+                    <div className="w-10" /> 
                 </div>
 
                 {/* Step Container */}

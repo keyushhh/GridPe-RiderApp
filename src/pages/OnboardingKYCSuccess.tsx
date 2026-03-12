@@ -15,16 +15,21 @@ const OnboardingKYCSuccess = () => {
 
     return (
         <div className="relative h-[100dvh] w-full flex flex-col items-center bg-white font-satoshi overflow-hidden">
-            {/* Glowing Orb */}
+            {/* Standardized Glowing Orb: Green */}
             <div
-                className="absolute top-[-100px] left-1/2 -translate-x-1/2 w-[250px] h-[250px] rounded-full blur-[100px] opacity-30 pointer-events-none z-0 bg-[#0C7E4B]"
+                className="absolute top-[-20px] left-1/2 -translate-x-1/2 w-[166px] h-[40px] rounded-full pointer-events-none z-0"
+                style={{
+                    backgroundColor: "#0C7E4B",
+                    filter: "blur(60px)",
+                    opacity: 0.8,
+                }}
             />
 
             {/* Content Container */}
-            <div className="relative z-10 w-full h-full flex flex-col pt-[58px] px-4 pb-10 overflow-y-auto items-center">
-                {/* Header */}
-                <div className="flex items-center justify-center w-full mb-[21px] shrink-0">
-                    <h1 className="text-[22px] font-medium text-black">
+            <div className="relative z-10 w-full h-full flex flex-col pb-10 overflow-y-auto items-center">
+                {/* Header Container */}
+                <div className="flex-none flex items-center justify-center w-full px-5 pt-12 pb-2 relative z-10">
+                    <h1 className="text-black text-[18px] font-semibold">
                         KYC
                     </h1>
                 </div>

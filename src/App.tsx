@@ -12,6 +12,7 @@ import OnboardingKYCSelfie from './pages/OnboardingKYCSelfie'
 import OnboardingKYCReview from './pages/OnboardingKYCReview'
 import OnboardingKYCSuccess from './pages/OnboardingKYCSuccess'
 import IdentityVerificationInfo from './pages/IdentityVerificationInfo'
+import Home from './pages/Home'
 
 function App() {
     return (
@@ -31,6 +32,7 @@ function App() {
                     <Route path="/onboarding/kyc-review" element={<OnboardingKYCReview />} />
                     <Route path="/onboarding/kyc-success" element={<OnboardingKYCSuccess />} />
                     <Route path="/onboarding/identity-info" element={<IdentityVerificationInfo />} />
+                    <Route path="/dashboard" element={<Home />} />
                 </Routes>
             </Router>
         </AuthProvider>
