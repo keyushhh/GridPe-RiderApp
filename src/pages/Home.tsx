@@ -7,6 +7,8 @@ import homeIcon from "../assets/home.svg";
 import earningsIcon from "../assets/earnings.svg";
 import notificationsIcon from "../assets/notifications.svg";
 import refreshIcon from "../assets/Refresh.svg";
+import OrderModal from "../components/OrderModal";
+
 const Home = () => {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState("home");
@@ -18,6 +20,7 @@ const Home = () => {
         localStorage.getItem("rider_has_been_online") === "true"
     );
     const [earnings, setEarnings] = useState(0);
+    const [showOrderModal, setShowOrderModal] = useState(false);
 
     // Simulation: Auto-verify after 2 minutes
     useEffect(() => {
@@ -144,6 +147,11 @@ const Home = () => {
                             {/* Refresh CTA: 40px below message */}
                             <button 
                                 disabled={!isOnline}
+                                onClick={() => {
+                                    if (isOnline) {
+                                        setShowOrderModal(true);
+                                    }
+                                }}
                                 className={`mt-[96px] w-[193px] h-[42px] rounded-full flex items-center justify-center transition-all duration-300 ${
                                     isOnline ? "bg-black cursor-pointer active:scale-95" : "bg-[#BDBDBD] cursor-not-allowed"
                                 }`}
@@ -254,6 +262,21 @@ const Home = () => {
                     );
                 })}
             </div>
+
+            {/* Order Request Modal */}
+            {showOrderModal && (
+                <OrderModal 
+                    onAccept={() => {
+                        // For now should do nothing
+                        setShowOrderModal(false);
+                    }}
+                    onReject={() => {
+                        // For now should do nothing
+                        setShowOrderModal(false);
+                    }}
+                    onClose={() => setShowOrderModal(false)}
+                />
+            )}
         </div>
     );
 };
