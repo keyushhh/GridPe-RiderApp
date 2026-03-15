@@ -44,7 +44,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ onAccept, onReject, onClose }) 
 
       {/* Modal Container */}
       <div
-        className="relative bg-white w-[362px] h-[585px] rounded-[24px] shadow-[0px_8px_32px_rgba(0,0,0,0.12)] flex flex-col items-center overflow-visible"
+        className="relative bg-white w-[362px] h-[520px] rounded-[24px] shadow-[0px_8px_32px_rgba(0,0,0,0.12)] flex flex-col items-center overflow-visible"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Timer Badge: Center aligned, half inside half outside */}
@@ -99,7 +99,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ onAccept, onReject, onClose }) 
         <div className="mt-2 w-full h-[1px] bg-[#D9D9D9]" />
 
         {/* Pickup Container */}
-        <div className="mt-4 w-[330px] h-[84px] rounded-[14px] border border-[#EDEDED] relative p-[10px_13px_10px_16px] flex flex-col overflow-hidden">
+        <div className="mt-4 w-[330px] h-[100px] rounded-[14px] border border-[#EDEDED] relative p-[10px_13px_10px_16px] flex flex-col">
           <div className="flex justify-between items-start leading-none">
             <span className="font-satoshi font-bold text-[12px] text-black/50 tracking-[2px]">
               PICKUP FROM
@@ -127,12 +127,8 @@ const OrderModal: React.FC<OrderModalProps> = ({ onAccept, onReject, onClose }) 
         </div>
 
         {/* Order Details Container */}
-        <div className="mt-2 w-[330px] h-[161px] rounded-[14px] border border-[#EDEDED] flex flex-col p-3.5">
+        <div className="mt-2 w-[330px] h-auto rounded-[14px] border border-[#EDEDED] flex flex-col p-3.5">
           <div className="flex flex-col gap-3">
-            <div className="flex justify-between items-center leading-none">
-              <span className="font-satoshi font-medium text-[14px] text-black/50">Cash to Deliver</span>
-              <span className="font-satoshi font-bold text-[14px] text-black">₹5,000</span>
-            </div>
             <div className="flex justify-between items-center leading-none">
               <span className="font-satoshi font-medium text-[14px] text-black/50">Your Earning:</span>
               <span className="font-satoshi font-bold text-[14px] text-black">₹120</span>
@@ -143,7 +139,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ onAccept, onReject, onClose }) 
             </div>
           </div>
 
-          <div className="mt-auto mb-2.5 w-[330px] -ml-3.5 h-[1px] bg-[#D9D9D9]" />
+          <div className="mt-4 mb-3 w-[330px] -ml-3.5 h-[1px] bg-[#D9D9D9]" />
 
           <p className="font-satoshi font-medium text-[14px] text-black text-left leading-tight">
             Customer details will unlock once the order is accepted.
@@ -167,7 +163,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ onAccept, onReject, onClose }) 
         </div>
 
         {/* Footer Text */}
-        <div className="mt-2 mb-[18px] w-full pl-[30px] text-left">
+        <div className="mt-4 mb-6 w-full pl-[30px] text-left">
           <p className="font-satoshi font-medium text-[12px] text-black" style={{ letterSpacing: '-0.43px' }}>
             Frequent rejections may affect your reliability score.
           </p>

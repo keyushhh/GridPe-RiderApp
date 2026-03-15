@@ -13,6 +13,7 @@ import OnboardingKYCReview from './pages/OnboardingKYCReview'
 import OnboardingKYCSuccess from './pages/OnboardingKYCSuccess'
 import IdentityVerificationInfo from './pages/IdentityVerificationInfo'
 import Home from './pages/Home'
+import OrderDelivered from './pages/OrderDelivered'
 
 function App() {
     return (
@@ -32,6 +33,7 @@ function App() {
                     <Route path="/onboarding/kyc-review" element={<OnboardingKYCReview />} />
                     <Route path="/onboarding/kyc-success" element={<OnboardingKYCSuccess />} />
                     <Route path="/onboarding/identity-info" element={<IdentityVerificationInfo />} />
+                    <Route path="/order-delivered" element={<OrderDelivered />} />
                     <Route path="/dashboard" element={<Home />} />
                 </Routes>
             </Router>
