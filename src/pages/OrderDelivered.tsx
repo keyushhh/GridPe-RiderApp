@@ -7,6 +7,12 @@ const OrderDelivered = () => {
     const [timeLeft, setTimeLeft] = useState(30);
 
     useEffect(() => {
+        // Persist earnings as soon as the delivery success page is reached
+        const currentEarnings = Number(localStorage.getItem("rider_earnings")) || 0;
+        localStorage.setItem("rider_earnings", (currentEarnings + 120).toString());
+    }, []);
+
+    useEffect(() => {
         const timer = setInterval(() => {
             setTimeLeft((prev) => {
                 if (prev <= 1) {
@@ -22,7 +28,7 @@ const OrderDelivered = () => {
     }, [navigate]);
 
     const handleManualRedirect = () => {
-        navigate("/", { state: { orderCompleted: true } });
+        navigate("/dashboard", { state: { orderCompleted: true } });
     };
 
     return (

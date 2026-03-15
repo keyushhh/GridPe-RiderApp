@@ -85,10 +85,9 @@ const Home = () => {
     useEffect(() => {
         const state = location.state as any;
         if (state?.orderCompleted) {
-            const newEarnings = earnings + 120;
-            setEarnings(newEarnings);
-            localStorage.setItem("rider_earnings", newEarnings.toString());
             setHasActiveOrder(false);
+            // Refresh local earnings from storage
+            setEarnings(Number(localStorage.getItem("rider_earnings")) || 0);
             // Clear location state to prevent repeat logic
             window.history.replaceState({}, document.title);
         }
