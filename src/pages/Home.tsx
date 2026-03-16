@@ -364,16 +364,43 @@ const Home = () => {
                         </div>
 
                         {/* Shifts Container: 12px below header */}
-                        <div className="w-[362px] h-[113px] rounded-[14px] border border-[#EDEDED] flex items-center justify-center p-6 shrink-0 mb-8 transition-all duration-300">
-                            <p className="text-black text-[14px] font-medium text-center opacity-50 px-2">
-                                {hasBeenOnline 
-                                    ? "Shift details will update automatically as you complete deliveries."
-                                    : kycStatus === "verified"
+                        {hasBeenOnline ? (
+                            <div className="w-[362px] rounded-[14px] border border-[#EDEDED] flex flex-col pt-[14px] pl-[14px] pr-[14px] pb-[16px] shrink-0 mb-8 z-10 bg-white">
+                                <h4 className="text-[14px] font-bold text-black leading-none">
+                                    Current Shift
+                                </h4>
+                                <p className="mt-[11px] text-[14px] font-medium text-black leading-none" style={{ letterSpacing: "-0.43px" }}>
+                                    9:00 PM - 11:00 PM (Kormangala Hub)
+                                </p>
+                                
+                                <div className="mt-[13px] w-full h-[1px] bg-[#E9E9E9]" />
+                                
+                                <p className="mt-[9px] text-[14px] font-medium italic text-black/50 leading-none" style={{ letterSpacing: "-0.43px" }}>
+                                    Complete 3 consecutive days in this slot to unlock ₹200 streak bonus.
+                                </p>
+                                
+                                <button 
+                                    className="mt-[11px] text-[14px] font-medium text-[#5260FE] underline leading-none text-left" 
+                                    style={{ letterSpacing: "-0.43px" }}
+                                    onClick={() => navigate('/shifts')}
+                                >
+                                    View Shift Details
+                                </button>
+                                
+                                <p className="mt-[18px] text-[12px] font-medium italic text-black/50 leading-[1.4]" style={{ letterSpacing: "-0.43px" }}>
+                                    Grid.pe learns your shift patterns based on when you start working and when you go offline.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="w-[362px] h-[113px] rounded-[14px] border border-[#EDEDED] flex items-center justify-center p-6 shrink-0 mb-8 transition-all duration-300 bg-white">
+                                <p className="text-black text-[14px] font-medium text-center opacity-50 px-2">
+                                    {kycStatus === "verified"
                                         ? "Shifts will be visible once you start accepting orders."
                                         : "Your shifts will appear here once your account is verified and active."
-                                }
-                            </p>
-                        </div>
+                                    }
+                                </p>
+                            </div>
+                        )}
 
                         {/* New Rider Bonus Banner: Only visible if verified and NEVER gone online */}
                         {kycStatus === "verified" && !hasBeenOnline && (

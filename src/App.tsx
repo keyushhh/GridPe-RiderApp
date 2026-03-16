@@ -14,6 +14,7 @@ import OnboardingKYCSuccess from './pages/OnboardingKYCSuccess'
 import IdentityVerificationInfo from './pages/IdentityVerificationInfo'
 import Home from './pages/Home'
 import OrderDelivered from './pages/OrderDelivered'
+import Shifts from './pages/Shifts'
 
 function App() {
     return (
@@ -35,6 +36,7 @@ function App() {
                     <Route path="/onboarding/identity-info" element={<IdentityVerificationInfo />} />
                     <Route path="/order-delivered" element={<OrderDelivered />} />
                     <Route path="/dashboard" element={<Home />} />
+                    <Route path="/shifts" element={<Shifts />} />
                 </Routes>
             </Router>
         </AuthProvider>
