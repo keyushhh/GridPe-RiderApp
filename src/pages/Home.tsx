@@ -439,7 +439,13 @@ const Home = () => {
                     return (
                         <div 
                             key={item.id}
-                            onClick={() => setActiveTab(item.id)}
+                            onClick={() => {
+                                if (item.id === "earnings") {
+                                    navigate("/earnings");
+                                } else {
+                                    setActiveTab(item.id);
+                                }
+                            }}
                             className="relative flex flex-col items-center justify-center h-full cursor-pointer z-10 transition-colors duration-300"
                             style={{ 
                                 width: "93px" // 279 / 3 = 93px slots for distribution

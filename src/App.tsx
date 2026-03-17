@@ -15,6 +15,10 @@ import IdentityVerificationInfo from './pages/IdentityVerificationInfo'
 import Home from './pages/Home'
 import OrderDelivered from './pages/OrderDelivered'
 import Shifts from './pages/Shifts'
+import Earnings from './pages/Earnings'
+import EarningsDetail from './pages/EarningsDetail'
+import AutoPayout from './pages/AutoPayout'
+import AutoPayoutSuccess from './pages/AutoPayoutSuccess'
 
 function App() {
     return (
@@ -37,6 +41,10 @@ function App() {
                     <Route path="/order-delivered" element={<OrderDelivered />} />
                     <Route path="/dashboard" element={<Home />} />
                     <Route path="/shifts" element={<Shifts />} />
+                    <Route path="/earnings" element={<Earnings />} />
+                    <Route path="/earnings-detail" element={<EarningsDetail />} />
+                    <Route path="/auto-payout" element={<AutoPayout />} />
+                    <Route path="/auto-payout-success" element={<AutoPayoutSuccess />} />
                 </Routes>
             </Router>
         </AuthProvider>
