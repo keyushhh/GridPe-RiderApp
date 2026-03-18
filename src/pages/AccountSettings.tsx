@@ -1,20 +1,25 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useRef, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import avatarImg from "../assets/avatar.png";
 import bankIcon from "../assets/bank.svg";
 import chevronBackward from "../assets/chevron_backward.svg";
+import chevronForward from "../assets/chevron_forward.svg";
 import copyIcon from "../assets/copy.svg";
 import kycLockIcon from "../assets/kyc-lock.svg";
 import logoutIcon from "../assets/log-out.svg";
 import personalInfoIcon from "../assets/personal-info.svg";
 import securityIcon from "../assets/security.svg";
+import shareIcon from "../assets/share.svg";
 import verifiedBadge from "../assets/verified-badge.svg";
 import { useAuth } from "../hooks/useAuth";
 
 const AccountSettings = () => {
     const navigate = useNavigate();
-    const { phoneNumber, logout, kycStatus, fullName } = useAuth();
-    const [activeTab, setActiveTab] = useState("Home");
+    const location = useLocation();
+    const { phoneNumber, logout, kycStatus, fullName, email } = useAuth();
+    const [activeTab, setActiveTab] = useState(location.state?.activeTab || "Home");
+    const [profileImage, setProfileImage] = useState(avatarImg);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     console.log('AccountSettings render:', { kycStatus, fullName });
 
@@ -28,6 +33,24 @@ const AccountSettings = () => {
     const handleCopyId = () => {
         navigator.clipboard.writeText(riderId);
         // We could add a toast here if needed
+    };
+
+    const handleUploadClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (file) {
+            // Check if file is jpg, jpeg, or png
+            const allowedTypes = ["image/jpeg", "image/jpg", "image/png"];
+            if (allowedTypes.includes(file.type)) {
+                const imageUrl = URL.createObjectURL(file);
+                setProfileImage(imageUrl);
+            } else {
+                alert("Only JPG, JPEG, and PNG formats are allowed.");
+            }
+        }
     };
 
     const quickLinks = [
@@ -93,7 +116,7 @@ const AccountSettings = () => {
                     <>
                         {/* Avatar: 18px below divider */}
                         <div className="mt-[18px] w-[83px] h-[83px] rounded-full border border-gray-100 overflow-hidden shrink-0">
-                            <img src={avatarImg} alt="Avatar" className="w-full h-full object-cover" />
+                            <img src={profileImage} alt="Avatar" className="w-full h-full object-cover" />
                         </div>
 
                         {/* Name: 12px below avatar */}
@@ -202,6 +225,94 @@ const AccountSettings = () => {
                             </p>
                         </div>
                     </>
+                )}
+
+                {activeTab === "Personal Info" && (
+                    <div className="w-full flex flex-col items-start px-0">
+                        {/* Icon and Title Row: 19px below slider menu */}
+                        <div className="mt-[19px] flex items-center">
+                            <img src={personalInfoIcon} alt="Personal Info" className="w-[24px] h-[24px]" />
+                            <h2 className="ml-[12px] text-black font-bold text-[22px] leading-tight">
+                                Personal Info
+                            </h2>
+                        </div>
+
+                        {/* Avatar and Upload Row: 25px below header */}
+                        <div className="mt-[25px] flex items-center w-full">
+                            <div className="w-[83px] h-[83px] rounded-full border border-gray-100 overflow-hidden shrink-0">
+                                <img src={profileImage} alt="Avatar" className="w-full h-full object-cover" />
+                            </div>
+
+                            <button
+                                onClick={handleUploadClick}
+                                className="ml-[170px] w-[109px] h-[32px] rounded-full bg-black text-white text-[12px] font-medium flex items-center justify-center transition-transform active:scale-95"
+                            >
+                                Upload Photo
+                            </button>
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                onChange={handleFileChange}
+                                accept=".jpg,.jpeg,.png"
+                                className="hidden"
+                            />
+                        </div>
+
+                        {/* Name Section: 29px below avatar */}
+                        <div className="mt-[29px] w-full flex flex-col items-start relative px-0">
+                            <span className="text-black font-medium text-[14px] leading-none">Name</span>
+                            <div className="mt-[4px] w-full flex items-center justify-between">
+                                <span className="text-black font-medium text-[18px] leading-tight">
+                                    {riderName}
+                                </span>
+                                <img src={verifiedBadge} alt="Verified" className="w-[16px] h-[16px] mr-[2px]" />
+                            </div>
+                        </div>
+
+                        {/* Mobile Number Section: 9px below Name */}
+                        <div className="mt-[9px] w-full flex flex-col items-start relative px-0">
+                            <span className="text-black font-medium text-[14px] leading-none">Mobile Number</span>
+                            <div className="mt-[4px] w-full flex items-center justify-between">
+                                <span className="text-black font-medium text-[18px] leading-tight">
+                                    {riderMobile}
+                                </span>
+                                <img src={verifiedBadge} alt="Verified" className="w-[16px] h-[16px] mr-[2px]" />
+                            </div>
+                        </div>
+
+                        {/* Disclaimer: 16px below Mobile */}
+                        <p className="mt-[16px] w-full text-black/50 font-medium italic text-[12px] leading-tight text-left">
+                            These details are verified from your KYC and cannot be edited.
+                        </p>
+
+                        {/* Divider: 22px below disclaimer */}
+                        <div className="mt-[22px] w-[362px] h-[1px] bg-[#E9EAEB]" />
+
+                        {/* Email Section: 18px below divider */}
+                        <div className="mt-[18px] w-full flex flex-col items-start relative px-0">
+                            <span className="text-black font-medium text-[14px] leading-none">Email ID</span>
+                            <div 
+                                className="mt-[4px] w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
+                                onClick={() => navigate('/account-settings/email')}
+                            >
+                                <span className={`font-medium text-[18px] leading-tight ${email ? 'text-black' : 'text-black/50 italic'}`}>
+                                    {email || "Add your email (optional)"}
+                                </span>
+                                <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
+                            </div>
+                        </div>
+
+                        {/* Language Section: 12px below Email */}
+                        <div className="mt-[12px] w-full flex flex-col items-start relative px-0">
+                            <span className="text-black font-medium text-[14px] leading-none">Language</span>
+                            <div className="mt-[4px] w-full flex items-center justify-between">
+                                <span className="text-black font-medium text-[18px] leading-tight">
+                                    English (EN)
+                                </span>
+                                <img src={shareIcon} alt="Share" className="w-[16px] h-[16px] mr-[2px]" />
+                            </div>
+                        </div>
+                    </div>
                 )}
             </div>
         </div>

@@ -5,7 +5,9 @@ interface AuthContextType {
     phoneNumber: string | null;
     fullName: string | null;
     kycStatus: string | null;
+    email: string | null;
     setPhoneNumber: (phone: string | null) => void;
+    updateEmail: (email: string | null) => void;
     login: (uuid: string, fullName?: string | null, kycStatus?: string | null) => void;
     logout: () => void;
     loading: boolean;
@@ -18,6 +20,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [phoneNumber, setPhoneNumberState] = useState<string | null>(localStorage.getItem('rider_phone'));
     const [fullName, setFullName] = useState<string | null>(localStorage.getItem('rider_kyc_name'));
     const [kycStatus, setKycStatus] = useState<string | null>(localStorage.getItem('rider_kyc_status'));
+    const [email, setEmailState] = useState<string | null>(localStorage.getItem('rider_email'));
     const [loading, setLoading] = useState(true);
 
     const setPhoneNumber = (phone: string | null) => {
@@ -26,18 +29,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setPhoneNumberState(phone);
     };
 
+    const updateEmail = (email: string | null) => {
+        if (email) localStorage.setItem('rider_email', email);
+        else localStorage.removeItem('rider_email');
+        setEmailState(email);
+    };
+
     useEffect(() => {
         const storedUuid = localStorage.getItem('rider_uuid');
         const storedPhone = localStorage.getItem('rider_phone');
         const storedName = localStorage.getItem('rider_kyc_name');
         const storedStatus = localStorage.getItem('rider_kyc_status');
+        const storedEmail = localStorage.getItem('rider_email');
         
-        console.log('AuthProvider init:', { storedUuid, storedPhone, storedName, storedStatus });
+        console.log('AuthProvider init:', { storedUuid, storedPhone, storedName, storedStatus, storedEmail });
         
         if (storedUuid) setRiderUuid(storedUuid);
         if (storedPhone) setPhoneNumberState(storedPhone);
         if (storedName) setFullName(storedName);
         if (storedStatus) setKycStatus(storedStatus);
+        if (storedEmail) setEmailState(storedEmail);
         
         setLoading(false);
     }, []);
@@ -90,18 +101,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('rider_is_online');
         localStorage.removeItem('rider_has_been_online');
         localStorage.removeItem('rider_earnings');
+        localStorage.removeItem('rider_email');
         
         // Reset all React state
         setRiderUuid(null);
         setPhoneNumberState(null);
         setFullName(null);
         setKycStatus(null);
+        setEmailState(null);
         
         console.log('User logged out, all state cleared.');
     };
 
     return (
-        <AuthContext.Provider value={{ riderUuid, phoneNumber, fullName, kycStatus, setPhoneNumber, login, logout, loading }}>
+        <AuthContext.Provider value={{ riderUuid, phoneNumber, fullName, kycStatus, email, setPhoneNumber, updateEmail, login, logout, loading }}>
             {children}
         </AuthContext.Provider>
     );
