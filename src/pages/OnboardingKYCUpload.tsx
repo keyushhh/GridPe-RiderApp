@@ -259,7 +259,9 @@ const OnboardingKYCUpload = () => {
                     <div className="relative w-full">
                         <button
                             onClick={() => setShowCalendar(!showCalendar)}
-                            className="w-[362px] h-[48px] rounded-[100px] text-left px-6 mx-auto flex items-center justify-between bg-[#F7F8FA] border border-[#E6E8EB]"
+                            className={`w-[362px] h-[48px] rounded-[100px] text-left px-6 mx-auto flex items-center justify-between bg-[#F7F8FA] border transition-colors outline-none focus:border-[#5260FE] ${
+                                showCalendar ? "border-[#5260FE]" : "border-[#E6E8EB]"
+                            }`}
                         >
                             <span className={`${dob ? "text-black" : "text-[#A0A0A0]"} font-medium`}>{dob ? format(dob, "dd MMM yyyy") : "Date of Birth"}</span>
                             <CalendarIcon className="w-5 h-5 text-[#A0A0A0]" />
@@ -286,7 +288,18 @@ const OnboardingKYCUpload = () => {
                         This information is used for identity verification only, and will be kept secure by GridPe
                     </p>
                     <button
-                        onClick={() => navigate("/onboarding/kyc-selfie")}
+                        onClick={() => {
+                            console.log('Navigating to selfie with fullName:', fullName);
+                            navigate("/onboarding/kyc-selfie", { 
+                                state: { 
+                                    images, 
+                                    documentNumber, 
+                                    fullName, 
+                                    dob, 
+                                    documentType 
+                                } 
+                            });
+                        }}
                         disabled={!canSubmit}
                         className={`w-[362px] h-[48px] rounded-full flex items-center justify-center shrink-0 transition-opacity ${canSubmit
                                 ? 'bg-[#5260FE] hover:opacity-90 active:scale-[0.98] cursor-pointer'

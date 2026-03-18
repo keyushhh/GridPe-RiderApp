@@ -4,14 +4,18 @@ import { ChevronLeft } from "lucide-react";
 import checkboxOutline from "../assets/checkbox-outline.svg";
 import checkboxSelected from "../assets/checkbox-selected.svg";
 import { format } from "date-fns";
+import { useAuth } from "../hooks/useAuth";
+import { supabase } from "../lib/supabase";
 
 const OnboardingKYCReview = () => {
     const navigate = useNavigate();
     const location = useLocation();
+    const { login, riderUuid, phoneNumber } = useAuth();
     const [agreed, setAgreed] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const { images, documentNumber, fullName, dob, documentType, selfie } = location.state || {};
+    console.log('OnboardingKYCReview initial state:', { fullName, documentNumber, riderUuid });
 
     const documentLabels: Record<string, string> = {
         aadhar: "Aadhar Card",
@@ -30,11 +34,76 @@ const OnboardingKYCReview = () => {
 
     const handleConfirm = async () => {
         setIsSubmitting(true);
-        // Simulate submission flow
-        setTimeout(() => {
+        console.log('handleConfirm start:', { fullName, riderUuid });
+        
+        try {
+            // Update or Insert rider profile in Supabase
+            if (riderUuid && fullName && phoneNumber) {
+                console.log('Upserting Supabase for rider:', { riderUuid, fullName, phoneNumber });
+                
+                // Helper function to try different column names with upsert
+                const tryUpdate = async (columnName: string) => {
+                    return await supabase
+                        .from('riders')
+                        .upsert({ 
+                            id: riderUuid, 
+                            [columnName]: fullName,
+                            phone_number: phoneNumber 
+                        }, { onConflict: 'id' })
+                        .select();
+                };
+
+                let { data, error } = await tryUpdate('full_name');
+                
+                // If full_name fails with "column does not exist", try alternative names
+                if (error && error.code === '42703') {
+                    console.warn('column full_name does not exist, trying name...');
+                    ({ data, error } = await tryUpdate('name'));
+                }
+                
+                if (error && error.code === '42703') {
+                    console.warn('column name does not exist, trying fullName...');
+                    ({ data, error } = await tryUpdate('fullName'));
+                }
+
+                if (error) {
+                    console.error('Final Supabase upsert error:', error);
+                } else {
+                    console.log('Supabase upsert successful, returned data:', data);
+                }
+
+                // --- TEST ACCOUNT PERSISTENCE FALLBACK ---
+                // Save to localStorage if it's the test account, as RLS will likely block the DB update above.
+                if (riderUuid === '00000000-0000-0000-0000-000000000001' && phoneNumber) {
+                    console.log('Saving persistent backup for test account');
+                    const testData = {
+                        fullName: fullName,
+                        kycStatus: 'in_review',
+                        updatedAt: new Date().toISOString()
+                    };
+                    localStorage.setItem(`test_data_${phoneNumber}`, JSON.stringify(testData));
+                }
+                // ------------------------------------------
+            } else {
+                console.warn('Cannot upsert Supabase: Missing required data', { riderUuid, fullName, phoneNumber });
+            }
+
+            // Update local state via useAuth
+            if (riderUuid) {
+                console.log('Refreshing local auth state with:', { riderUuid, fullName });
+                login(riderUuid, fullName, "in_review");
+            }
+
+            // Simulate submission flow
+            setTimeout(() => {
+                setIsSubmitting(false);
+                navigate("/onboarding/kyc-success");
+            }, 1000)
+        } catch (error) {
+            console.error("Error submitting KYC:", error);
             setIsSubmitting(false);
-            navigate("/onboarding/kyc-success");
-        }, 1500)
+            // Optionally add an error toast here
+        }
     };
 
     return (

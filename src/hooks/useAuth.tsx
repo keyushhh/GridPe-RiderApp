@@ -3,8 +3,10 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 interface AuthContextType {
     riderUuid: string | null;
     phoneNumber: string | null;
+    fullName: string | null;
+    kycStatus: string | null;
     setPhoneNumber: (phone: string | null) => void;
-    login: (uuid: string) => void;
+    login: (uuid: string, fullName?: string | null, kycStatus?: string | null) => void;
     logout: () => void;
     loading: boolean;
 }
@@ -13,29 +15,93 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [riderUuid, setRiderUuid] = useState<string | null>(localStorage.getItem('rider_uuid'));
-    const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
+    const [phoneNumber, setPhoneNumberState] = useState<string | null>(localStorage.getItem('rider_phone'));
+    const [fullName, setFullName] = useState<string | null>(localStorage.getItem('rider_kyc_name'));
+    const [kycStatus, setKycStatus] = useState<string | null>(localStorage.getItem('rider_kyc_status'));
     const [loading, setLoading] = useState(true);
+
+    const setPhoneNumber = (phone: string | null) => {
+        if (phone) localStorage.setItem('rider_phone', phone);
+        else localStorage.removeItem('rider_phone');
+        setPhoneNumberState(phone);
+    };
 
     useEffect(() => {
         const storedUuid = localStorage.getItem('rider_uuid');
-        if (storedUuid) {
-            setRiderUuid(storedUuid);
-        }
+        const storedPhone = localStorage.getItem('rider_phone');
+        const storedName = localStorage.getItem('rider_kyc_name');
+        const storedStatus = localStorage.getItem('rider_kyc_status');
+        
+        console.log('AuthProvider init:', { storedUuid, storedPhone, storedName, storedStatus });
+        
+        if (storedUuid) setRiderUuid(storedUuid);
+        if (storedPhone) setPhoneNumberState(storedPhone);
+        if (storedName) setFullName(storedName);
+        if (storedStatus) setKycStatus(storedStatus);
+        
         setLoading(false);
     }, []);
 
-    const login = (uuid: string) => {
+    // Simulation: Auto-verify after 30 seconds
+    useEffect(() => {
+        if (kycStatus === "in_review") {
+            const timer = setTimeout(() => {
+                setKycStatus("verified");
+                localStorage.setItem("rider_kyc_status", "verified");
+                console.log("KYC Auto-verified!");
+            }, 30000); // 30 seconds
+
+            return () => clearTimeout(timer);
+        }
+    }, [kycStatus]);
+
+    const login = (uuid: string, name?: string | null, status?: string | null) => {
+        console.log('login called:', { uuid, name, status });
         localStorage.setItem('rider_uuid', uuid);
         setRiderUuid(uuid);
+        
+        if (name !== undefined) {
+            if (name) {
+                localStorage.setItem('rider_kyc_name', name);
+                setFullName(name);
+            } else {
+                localStorage.removeItem('rider_kyc_name');
+                setFullName(null);
+            }
+        }
+        
+        if (status !== undefined) {
+            if (status) {
+                localStorage.setItem('rider_kyc_status', status);
+                setKycStatus(status);
+            } else {
+                localStorage.removeItem('rider_kyc_status');
+                setKycStatus(null);
+            }
+        }
     };
 
     const logout = () => {
+        // Clear all auth and app state from localStorage
         localStorage.removeItem('rider_uuid');
+        localStorage.removeItem('rider_phone');
+        localStorage.removeItem('rider_kyc_name');
+        localStorage.removeItem('rider_kyc_status');
+        localStorage.removeItem('rider_is_online');
+        localStorage.removeItem('rider_has_been_online');
+        localStorage.removeItem('rider_earnings');
+        
+        // Reset all React state
         setRiderUuid(null);
+        setPhoneNumberState(null);
+        setFullName(null);
+        setKycStatus(null);
+        
+        console.log('User logged out, all state cleared.');
     };
 
     return (
-        <AuthContext.Provider value={{ riderUuid, phoneNumber, setPhoneNumber, login, logout, loading }}>
+        <AuthContext.Provider value={{ riderUuid, phoneNumber, fullName, kycStatus, setPhoneNumber, login, logout, loading }}>
             {children}
         </AuthContext.Provider>
     );

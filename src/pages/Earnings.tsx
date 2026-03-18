@@ -65,7 +65,7 @@ const Earnings = () => {
     ];
 
     return (
-        <div className="relative w-[393px] h-screen bg-[#F5F5F5] font-satoshi flex flex-col items-center overflow-hidden">
+        <div className="relative w-full h-[100dvh] bg-[#F5F5F5] font-satoshi flex flex-col items-center overflow-hidden">
             {/* Scrollable Content Area */}
             <div className="flex-1 w-full overflow-y-auto no-scrollbar flex flex-col items-center pb-[120px]">
                 {/* Purple Glowing Orb */}
@@ -411,7 +411,7 @@ const Earnings = () => {
 
             {/* Bottom Navigation Container: Glassmorphism effect */}
             <div 
-                className="fixed bottom-0 w-[402px] h-[105px] z-20 flex flex-col items-center"
+                className="fixed bottom-0 w-full h-[105px] z-20 flex flex-col items-center"
                 style={{
                     backgroundColor: "rgba(255, 255, 255, 0.7)",
                     backdropFilter: "blur(15px)",

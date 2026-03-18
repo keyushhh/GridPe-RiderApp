@@ -11,7 +11,7 @@ const Login: React.FC = () => {
 
     React.useEffect(() => {
         const kycStatus = localStorage.getItem('rider_kyc_status');
-        if (kycStatus === 'verified') {
+        if (kycStatus === 'verified' || kycStatus === 'in_review') {
             navigate('/dashboard');
         }
     }, [navigate]);

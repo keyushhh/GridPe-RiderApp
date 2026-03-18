@@ -11,6 +11,7 @@ import OrderModal from "../components/OrderModal";
 import PickUpVerificationModal from "../components/PickUpVerificationModal";
 import FaceVerification from "../components/FaceVerification";
 import DeliveryOTPModal from "../components/DeliveryOTPModal";
+import { useAuth } from "../hooks/useAuth";
 
 const Home = () => {
     const navigate = useNavigate();
@@ -19,9 +20,7 @@ const Home = () => {
     const [isOnline, setIsOnline] = useState(
         localStorage.getItem("rider_is_online") === "true"
     );
-    const [kycStatus, setKycStatus] = useState<"pending" | "verified">(
-        (localStorage.getItem("rider_kyc_status") as "pending" | "verified") || "pending"
-    );
+    const { kycStatus, fullName } = useAuth();
     const [hasBeenOnline, setHasBeenOnline] = useState(
         localStorage.getItem("rider_has_been_online") === "true"
     );
@@ -49,20 +48,8 @@ const Home = () => {
         }
     }, [hasActiveOrder, isAtHub]);
 
-    // Simulation: Auto-verify after 2 minutes
-    useEffect(() => {
-        if (kycStatus === "pending") {
-            const timer = setTimeout(() => {
-                setKycStatus("verified");
-                localStorage.setItem("rider_kyc_status", "verified");
-            }, 120000); // 2 minutes
-
-            return () => clearTimeout(timer);
-        }
-    }, [kycStatus]);
-
-    // In a real app, 'Rohit' would come from an auth/profile context
-    const riderName = "Rohit";
+    // Use actual name if available from KYC
+    const riderName = fullName || "";
 
     const navItems = [
         { id: "home", label: "Home", icon: homeIcon },
@@ -118,13 +105,16 @@ const Home = () => {
                 <h1 className="text-black text-[24px] font-bold leading-none">
                     Welcome, {riderName}!
                 </h1>
-                <div className="w-[50px] h-[50px] rounded-full border border-gray-100 overflow-hidden shrink-0">
+                <div 
+                    className="w-[50px] h-[50px] rounded-full border border-gray-100 overflow-hidden shrink-0 cursor-pointer transition-transform active:scale-95"
+                    onClick={() => navigate('/account-settings')}
+                >
                     <img src={avatarImg} alt="Avatar" className="w-full h-full object-cover" />
                 </div>
             </div>
 
             {/* Scrollable Content Area */}
-            <div className="flex-1 w-full overflow-y-auto flex flex-col items-center pb-[120px]">
+            <div className="flex-1 w-full overflow-y-auto no-scrollbar flex flex-col items-center pb-[120px]">
                 {hasActiveOrder ? (
                     /* Active Order View */
                     <div className="w-[362px] rounded-[12px] border border-[#EDEDED] bg-white z-10 shadow-[0px_2px_8px_0px_rgba(0,0,0,0.04)] mt-[10px] shrink-0 relative flex flex-col items-center">
@@ -294,8 +284,10 @@ const Home = () => {
                                         <h2 className="text-[20px] font-bold text-black leading-[1.4]">
                                             {kycStatus === "verified" ? (
                                                 <>Verification is completed! <br /> You can now go online, and start accepting orders.</>
-                                            ) : (
+                                            ) : kycStatus === "in_review" ? (
                                                 <>Verification is in progress. <br /> You’ll be notified once your KYC is approved.</>
+                                            ) : (
+                                                <>KYC Verification Required. <br /> Please complete your KYC to start earning.</>
                                             )}
                                         </h2>
                                     </div>
@@ -423,54 +415,64 @@ const Home = () => {
                 )}
             </div>
 
-            {/* Bottom Navigation: 279x62px pill shaped */}
-            <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-[279px] h-[62px] rounded-full bg-[#F2F2F2] flex items-center z-20 px-[4px]">
-                {/* Active Tab Background Pill: 96x54px */}
-                <div 
-                    className="absolute h-[54px] w-[96px] rounded-full transition-all duration-300 ease-[cubic-bezier(0.25, 0.1, 0.25, 1)] z-0"
-                    style={{ 
-                        backgroundColor: "rgba(146, 146, 146, 0.26)",
-                        left: activeTab === "home" ? "4px" : activeTab === "earnings" ? "91.5px" : "179px"
-                    }}
-                />
+            {/* Bottom Navigation Container: Glassmorphism effect */}
+            <div 
+                className="fixed bottom-0 w-full h-[105px] z-20 flex flex-col items-center"
+                style={{
+                    backgroundColor: "rgba(255, 255, 255, 0.7)",
+                    backdropFilter: "blur(15px)",
+                    WebkitBackdropFilter: "blur(15px)"
+                }}
+            >
+                {/* Inner Nav Bar: 12px from the top */}
+                <div className="mt-[12px] w-[279px] h-[62px] rounded-full bg-[#F2F2F2] flex items-center px-[4px] relative">
+                    {/* Active Tab Background Pill: 96x54px */}
+                    <div 
+                        className="absolute h-[54px] w-[96px] rounded-full transition-all duration-300 ease-[cubic-bezier(0.25, 0.1, 0.25, 1)] z-0"
+                        style={{ 
+                            backgroundColor: "rgba(146, 146, 146, 0.26)",
+                            left: activeTab === "home" ? "4px" : activeTab === "earnings" ? "91.5px" : "179px"
+                        }}
+                    />
 
-                {navItems.map((item) => {
-                    const isActive = activeTab === item.id;
-                    return (
-                        <div 
-                            key={item.id}
-                            onClick={() => {
-                                if (item.id === "earnings") {
-                                    navigate("/earnings");
-                                } else {
-                                    setActiveTab(item.id);
-                                }
-                            }}
-                            className="relative flex flex-col items-center justify-center h-full cursor-pointer z-10 transition-colors duration-300"
-                            style={{ 
-                                width: "93px" // 279 / 3 = 93px slots for distribution
-                            }}
-                        >
-                            <img 
-                                src={item.icon} 
-                                alt={item.label} 
-                                className="w-6 h-6 transition-all duration-300"
-                                style={{ 
-                                    filter: isActive ? "brightness(0)" : "none",
-                                    opacity: isActive ? 1 : 1,
-                                    color: isActive ? "#000000" : "#676767"
+                    {navItems.map((item) => {
+                        const isActive = activeTab === item.id;
+                        return (
+                            <div 
+                                key={item.id}
+                                onClick={() => {
+                                    if (item.id === "earnings") {
+                                        navigate("/earnings");
+                                    } else {
+                                        setActiveTab(item.id);
+                                    }
                                 }}
-                            />
-                            <span 
-                                className={`text-[10px] mt-[4px] transition-all duration-300 ${
-                                    isActive ? "font-bold text-black" : "font-medium text-[#676767]"
-                                }`}
+                                className="relative flex flex-col items-center justify-center h-full cursor-pointer z-10 transition-colors duration-300"
+                                style={{ 
+                                    width: "93px" // 279 / 3 = 93px slots for distribution
+                                }}
                             >
-                                {item.label}
-                            </span>
-                        </div>
-                    );
-                })}
+                                <img 
+                                    src={item.icon} 
+                                    alt={item.label} 
+                                    className="w-6 h-6 transition-all duration-300"
+                                    style={{ 
+                                        filter: isActive ? "brightness(0)" : "none",
+                                        opacity: isActive ? 1 : 1,
+                                        color: isActive ? "#000000" : "#676767"
+                                    }}
+                                />
+                                <span 
+                                    className={`text-[10px] mt-[4px] transition-all duration-300 ${
+                                        isActive ? "font-bold text-black" : "font-medium text-[#676767]"
+                                    }`}
+                                >
+                                    {item.label}
+                                </span>
+                            </div>
+                        );
+                    })}
+                </div>
             </div>
 
             {/* Order Request Modal */}

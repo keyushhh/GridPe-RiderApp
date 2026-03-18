@@ -13,7 +13,7 @@ const EarningsDetail = () => {
     };
 
     return (
-        <div className="relative w-[393px] h-screen bg-[#F5F5F5] font-satoshi flex flex-col items-center overflow-hidden">
+        <div className="relative w-full h-[100dvh] bg-[#F5F5F5] font-satoshi flex flex-col items-center overflow-hidden">
             {/* Scrollable Content Area */}
             <div className="flex-1 w-full overflow-y-auto no-scrollbar flex flex-col items-center pb-[120px]">
                 {/* Purple Glowing Orb */}

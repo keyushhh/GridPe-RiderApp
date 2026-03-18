@@ -19,6 +19,7 @@ import Earnings from './pages/Earnings'
 import EarningsDetail from './pages/EarningsDetail'
 import AutoPayout from './pages/AutoPayout'
 import AutoPayoutSuccess from './pages/AutoPayoutSuccess'
+import AccountSettings from './pages/AccountSettings'
 
 function App() {
     return (
@@ -45,6 +46,7 @@ function App() {
                     <Route path="/earnings-detail" element={<EarningsDetail />} />
                     <Route path="/auto-payout" element={<AutoPayout />} />
                     <Route path="/auto-payout-success" element={<AutoPayoutSuccess />} />
+                    <Route path="/account-settings" element={<AccountSettings />} />
                 </Routes>
             </Router>
         </AuthProvider>
