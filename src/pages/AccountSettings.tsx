@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import avatarImg from "../assets/avatar.png";
 import bankIcon from "../assets/bank.svg";
 import chevronBackward from "../assets/chevron_backward.svg";
@@ -8,10 +8,121 @@ import copyIcon from "../assets/copy.svg";
 import kycLockIcon from "../assets/kyc-lock.svg";
 import logoutIcon from "../assets/log-out.svg";
 import personalInfoIcon from "../assets/personal-info.svg";
+import phoneIcon from "../assets/phone.svg";
+import privacyDataIcon from "../assets/privacy_data.svg";
 import securityIcon from "../assets/security.svg";
 import shareIcon from "../assets/share.svg";
 import verifiedBadge from "../assets/verified-badge.svg";
+import simCardIcon from "../assets/simcard.svg";
+import airtelLogo from "../assets/sim-carriers/airtel.png";
+import jioLogo from "../assets/sim-carriers/jio.png";
+import viLogo from "../assets/sim-carriers/vodafone_idea.png";
+import bsnlLogo from "../assets/sim-carriers/bsnl.png";
+import mtnlLogo from "../assets/sim-carriers/mtnl.png";
+import radioSelected from "../assets/radio-selected.svg";
+import radioNotSelected from "../assets/radio-not-selected.svg";
+import successCheckIcon from "../assets/success-check.svg";
 import { useAuth } from "../hooks/useAuth";
+import AccountSelectionList from "../components/AccountSelectionList";
+import { getBankLogo } from "../utils/BankLogoMap";
+import deleteIcon from "../assets/delete.svg";
+import shieldIcon from "../assets/shield.svg";
+import smsIcon from "../assets/sms.svg";
+import authenticatorIcon from "../assets/authenticator.svg";
+import faceIdIcon from "../assets/face-id.svg";
+import fingerprintIcon from "../assets/fingerprint.svg";
+import passcodeIcon from "../assets/passcode.svg";
+import qrCodeImg from "../assets/trial-qr.png";
+import PasskeyBottomSheet from "../components/PasskeyBottomSheet";
+
+// Helper component for swipe-to-delete
+const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo }: any) => {
+    const [swipeX, setSwipeX] = useState(0);
+    const [isDragging, setIsDragging] = useState(false);
+    const startX = useRef(0);
+    const maxSwipe = -80;
+
+    const onTouchStart = (e: React.TouchEvent) => {
+        if (index === 0) return; // Primary account is not swipeable
+        startX.current = e.touches[0].clientX;
+        setIsDragging(true);
+    };
+
+    const onTouchMove = (e: React.TouchEvent) => {
+        if (index === 0 || !isDragging) return;
+        const currentX = e.touches[0].clientX;
+        const deltaX = currentX - startX.current;
+        
+        // Only allow left swipe
+        if (deltaX < 0) {
+            setSwipeX(Math.max(deltaX, maxSwipe));
+        } else {
+            setSwipeX(0);
+        }
+    };
+
+    const onTouchEnd = () => {
+        if (index === 0) return;
+        setIsDragging(false);
+        if (swipeX < -40) {
+            setSwipeX(maxSwipe);
+        } else {
+            setSwipeX(0);
+        }
+    };
+
+    const logoUrl = getBankLogo(acc.bankName);
+
+    return (
+        <div className={`relative w-[362px] h-auto overflow-hidden rounded-[16px] border border-[#E9EAEB] bg-white`}>
+            {/* Delete Background - Only on the right and only when swiped */}
+            {index !== 0 && swipeX < 0 && (
+                <div 
+                    className="absolute inset-y-0 right-0 w-[80px] bg-[#FF3B30] flex items-center justify-center cursor-pointer z-0"
+                    onClick={() => onDelete(acc.id)}
+                >
+                    <div className="flex flex-col items-center gap-1">
+                        <img src={deleteIcon} alt="Delete" className="w-[20px] h-[20px] brightness-0 invert" />
+                        <span className="text-white text-[12px] font-bold">Delete</span>
+                    </div>
+                </div>
+            )}
+
+            {/* Foreground Card Content */}
+            <div 
+                className="w-full h-auto p-[16px] bg-white flex flex-col relative transition-transform duration-200 ease-out z-10"
+                style={{ transform: `translateX(${swipeX}px)` }}
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
+            >
+                <div className="flex items-center gap-[12px]">
+                    <div className="w-[36px] h-[36px] flex items-center justify-center">
+                        {logoUrl ? (
+                            <img src={logoUrl} alt="" className="w-full h-full object-contain" />
+                        ) : (
+                            <div className="w-full h-full rounded-full bg-[#5260FE] flex items-center justify-center text-white font-bold text-[16px]">
+                                {acc.bankName.charAt(0)}
+                            </div>
+                        )}
+                    </div>
+                    <h3 className="text-black font-bold text-[18px] flex-1">{acc.bankName}</h3>
+                    {index === 0 && (
+                        <div className="h-[24px] px-[12px] rounded-full bg-[#1CB956] flex items-center justify-center">
+                            <span className="text-white text-[12px] font-bold">Primary</span>
+                        </div>
+                    )}
+                </div>
+                
+                <div className="mt-[8px] flex flex-col items-start">
+                    <span className="text-black font-medium text-[14px]">Savings account</span>
+                    <span className="mt-[4px] text-black font-medium text-[14px]">XXXX XXXX XXXX 0960</span>
+                    <span className="mt-[4px] text-black font-bold text-[14px]">Rohit Khandelwal</span>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const AccountSettings = () => {
     const navigate = useNavigate();
@@ -19,6 +130,76 @@ const AccountSettings = () => {
     const { phoneNumber, logout, kycStatus, fullName, email } = useAuth();
     const [activeTab, setActiveTab] = useState(location.state?.activeTab || "Home");
     const [profileImage, setProfileImage] = useState(avatarImg);
+    const [loginDevices, setLoginDevices] = useState<{ id: number, model: string, city: string, lastActive: string, app: string }[]>([]);
+    const [kycDoc, setKycDoc] = useState({ type: 'aadhar', label: 'Aadhar Card', number: 'XXXX 4242' });
+    const [bankingStep, setBankingStep] = useState<'list' | 'add_wifi' | 'validate_sim' | 'verifying_sim' | 'linked_accounts' | 'add_form' | 'success'>('list');
+    const [selectedAccount, setSelectedAccount] = useState<any>(null);
+    const [addedAccounts, setAddedAccounts] = useState<any[]>(() => {
+        const saved = localStorage.getItem('rider_bank_accounts');
+        return saved ? JSON.parse(saved) : [];
+    });
+    const [successfullyLinkedBank, setSuccessfullyLinkedBank] = useState<string | null>(null);
+    const [securityStep, setSecurityStep] = useState<'list' | 'passkeys' | 'authenticator' | 'authenticator_otp' | 'two_step_intro' | 'two_step_email' | 'two_step_otp' | 'two_step_method' | 'two_step_phone' | 'two_step_phone_otp' | 'two_step_backup_codes' | 'two_step_dashboard'>('list');
+    const [isAuthenticatorActive, setIsAuthenticatorActive] = useState(false);
+    const [authenticatorOtp, setAuthenticatorOtp] = useState(['', '', '', '', '', '']);
+    const otpInputs = useRef<(HTMLInputElement | null)[]>([]);
+    const [tempEmail, setTempEmail] = useState("");
+    const [emailError, setEmailError] = useState("");
+    const [twoStepOtp, setTwoStepOtp] = useState(['', '', '', '', '', '']);
+    const twoStepOtpInputs = useRef<(HTMLInputElement | null)[]>([]);
+    const [tempPhone, setTempPhone] = useState("");
+    const [phoneOtp, setPhoneOtp] = useState(['', '', '', '', '', '']);
+    const phoneOtpInputs = useRef<(HTMLInputElement | null)[]>([]);
+    const [isTwoStepEnabled, setIsTwoStepEnabled] = useState(true);
+    const [backupCodes, setBackupCodes] = useState<string[]>(Array(8).fill("2150-7122"));
+    const [fromDashboard, setFromDashboard] = useState(false);
+    const [selectedMethod, setSelectedMethod] = useState<'sms' | 'auth'>('sms');
+
+    // Persistence Logic
+    useEffect(() => {
+        if (!phoneNumber) return;
+        const storageKey = `gridpe_security_${phoneNumber}`;
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+            const data = JSON.parse(saved);
+            if (data.isTwoStepEnabled !== undefined) setIsTwoStepEnabled(data.isTwoStepEnabled);
+            if (data.isAuthenticatorActive !== undefined) setIsAuthenticatorActive(data.isAuthenticatorActive);
+            if (data.selectedMethod !== undefined) setSelectedMethod(data.selectedMethod);
+            if (data.backupCodes !== undefined) setBackupCodes(data.backupCodes);
+        }
+    }, [phoneNumber]);
+
+    useEffect(() => {
+        if (!phoneNumber) return;
+        const storageKey = `gridpe_security_${phoneNumber}`;
+        const data = {
+            isTwoStepEnabled,
+            isAuthenticatorActive,
+            selectedMethod,
+            backupCodes
+        };
+        localStorage.setItem(storageKey, JSON.stringify(data));
+    }, [phoneNumber, isTwoStepEnabled, isAuthenticatorActive, selectedMethod, backupCodes]);
+
+    const generateNewCodes = () => {
+        const newCodes = Array(8).fill(0).map(() => {
+            const part1 = Math.floor(1000 + Math.random() * 9000);
+            const part2 = Math.floor(1000 + Math.random() * 9000);
+            return `${part1}-${part2}`;
+        });
+        setBackupCodes(newCodes);
+    };
+    const [showPasskeySheet, setShowPasskeySheet] = useState(false);
+    const [verificationState, setVerificationState] = useState<'loading' | 'error' | 'success'>('loading');
+    const [selectedSim, setSelectedSim] = useState(1);
+    // For testing: change simCards count to 1 or 2 as needed
+    const [simCards] = useState([
+        { id: 1, label: 'SIM 1', carrier: 'Airtel', logo: airtelLogo },
+        { id: 2, label: 'SIM 2 (eSIM)', carrier: 'Jio', logo: jioLogo }
+        // { id: 1, label: 'SIM 1', carrier: 'Vi', logo: viLogo },
+        // { id: 1, label: 'SIM 1', carrier: 'BSNL', logo: bsnlLogo },
+        // { id: 1, label: 'SIM 1', carrier: 'MTNL', logo: mtnlLogo }
+    ]);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     console.log('AccountSettings render:', { kycStatus, fullName });
@@ -59,8 +240,119 @@ const AccountSettings = () => {
         { label: "Bank & UPI", icon: bankIcon, tab: "Banking" },
     ];
 
+    useEffect(() => {
+        if (activeTab !== "Security") return;
+
+        const fetchDevices = async () => {
+            // Get Current Device Name
+            const ua = navigator.userAgent;
+            let model = "Web Browser";
+            if (/iPhone/i.test(ua)) model = "iPhone";
+            else if (/Android/i.test(ua)) model = "Android Device";
+            else if (/Windows/i.test(ua)) model = "Windows PC";
+            else if (/Macintosh/i.test(ua)) model = "MacBook";
+
+            let city = "Bangalore, India";
+
+            // Get Current City
+            if ("geolocation" in navigator) {
+                try {
+                    const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+                        navigator.geolocation.getCurrentPosition(resolve, reject);
+                    });
+                    const response = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${position.coords.latitude}&longitude=${position.coords.longitude}&localityLanguage=en`);
+                    const data = await response.json();
+                    city = `${data.city || data.locality || "Bangalore"}, ${data.countryName || "India"}`;
+                } catch (error) {
+                    console.error("Error fetching location:", error);
+                }
+            }
+
+            const currentDevice = {
+                id: 1,
+                model: model,
+                city: city,
+                lastActive: "current",
+                app: "Grid.Pe Rider"
+            };
+
+            setLoginDevices([currentDevice]);
+        };
+
+        fetchDevices();
+    }, [activeTab]);
+
+    useEffect(() => {
+        if (activeTab !== "Privacy & Data") return;
+        
+        const labels: Record<string, string> = {
+            'aadhar': 'Aadhar Card',
+            'pan': 'PAN Card',
+            'voter': 'Voter ID',
+            'dl': 'Driving License'
+        };
+
+        const docType = localStorage.getItem('rider_kyc_doc_type') || 'aadhar';
+        const docNum = localStorage.getItem('rider_kyc_doc_number') || '4242';
+        
+        const last4 = docNum.replace(/\s/g, "").slice(-4);
+        const masked = docType === 'aadhar' ? `XXXX ${last4}` : `XXX${last4}`;
+        const label = labels[docType] || "Aadhar Card";
+        
+        setKycDoc({
+            type: docType,
+            label: label,
+            number: `${label} ending with ${masked}`
+        });
+    }, [activeTab]);
+
+    const handleDeleteAccount = (id: string) => {
+        setAddedAccounts(prev => prev.filter(acc => acc.id !== id));
+    };
+
+    useEffect(() => {
+        localStorage.setItem('rider_bank_accounts', JSON.stringify(addedAccounts));
+    }, [addedAccounts]);
+
+    useEffect(() => {
+        if (bankingStep === "verifying_sim") {
+            setVerificationState("loading");
+            const timer = setTimeout(() => {
+                setVerificationState("success");
+            }, 3000); // 3 seconds simulation
+            return () => clearTimeout(timer);
+        }
+    }, [bankingStep]);
+
+    const handleConnectBank = () => {
+        // Optimization: If already has accounts, skip verification steps
+        if (addedAccounts.length > 0) {
+            setBankingStep("linked_accounts");
+            return;
+        }
+
+        // Real WiFi detection logic
+        const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+        console.log("Connection Info:", {
+            type: connection?.type,
+            effectiveType: connection?.effectiveType,
+            downlink: connection?.downlink
+        });
+
+        // For testing/desktop: if type is missing or wifi, show the warning
+        // This ensures the user sees the screen for verification
+        if (!connection || connection.type === 'wifi' || connection.type === undefined) {
+            setBankingStep("add_wifi");
+        } else {
+            // If on mobile data, proceed to SIM validation
+            setBankingStep("validate_sim");
+        }
+    };
+
+    const isScrollable = activeTab !== "Security" || loginDevices.length >= 2;
+
     return (
-        <div className="relative w-[393px] h-screen bg-[#F5F5F5] font-satoshi flex flex-col items-center overflow-hidden">
+        <div className={`relative w-[393px] h-screen bg-[#F5F5F5] font-satoshi flex flex-col items-center ${isScrollable ? 'overflow-y-auto' : 'overflow-hidden'}`}>
             {/* Purple Glowing Orb */}
             <div
                 className="absolute top-[-20px] left-1/2 -translate-x-1/2 w-[166px] h-[40px] rounded-full pointer-events-none z-0"
@@ -71,10 +363,42 @@ const AccountSettings = () => {
                 }}
             />
 
-            {/* Header Container */}
             <div className="flex-none flex items-center w-[362px] px-0 pt-12 pb-2 relative z-10">
                 <button
-                    onClick={() => navigate(-1)}
+                    onClick={() => {
+                        if (activeTab === "Security" && (securityStep === "passkeys" || securityStep === "authenticator" || securityStep === "authenticator_otp" || securityStep === "two_step_intro" || securityStep === "two_step_email" || securityStep === "two_step_otp" || securityStep === "two_step_method" || securityStep === "two_step_phone" || securityStep === "two_step_phone_otp" || securityStep === "two_step_backup_codes" || securityStep === "two_step_dashboard")) {
+                            if (securityStep === "two_step_backup_codes" && fromDashboard) {
+                                setSecurityStep("two_step_dashboard");
+                                setFromDashboard(false);
+                            } else {
+                                setSecurityStep("list");
+                            }
+                            return;
+                        }
+                        if (activeTab === "Banking") {
+                            if (bankingStep === "add_wifi") {
+                                setBankingStep("list");
+                            } else if (bankingStep === "validate_sim") {
+                                setBankingStep("list");
+                            } else if (bankingStep === "verifying_sim") {
+                                setBankingStep("validate_sim");
+                            } else if (bankingStep === "linked_accounts") {
+                                if (addedAccounts.length > 0) {
+                                    setBankingStep("list");
+                                } else {
+                                    setBankingStep("verifying_sim");
+                                }
+                            } else if (bankingStep === "success") {
+                                setBankingStep("list");
+                            } else if (bankingStep === "add_form") {
+                                setBankingStep("linked_accounts");
+                            } else {
+                                navigate(-1);
+                            }
+                        } else {
+                            navigate(-1);
+                        }
+                    }}
                     className="w-[32px] h-[32px] rounded-full bg-white shadow-sm flex items-center justify-center transition-transform active:scale-90"
                 >
                     <img src={chevronBackward} alt="Back" className="w-[18px] h-[18px] brightness-0" />
@@ -91,7 +415,7 @@ const AccountSettings = () => {
             <div className="mt-6 w-full overflow-x-auto no-scrollbar flex relative z-10 shrink-0">
                 <div className="flex min-w-full px-4 relative">
                     {/* Gray Divider Bar */}
-                    <div className="absolute bottom-0 left-0 w-full h-[5px] bg-[#DFDFDF] z-0" />
+                    <div className="absolute bottom-0 left-0 w-[500px] h-[5px] bg-[#DFDFDF] z-0" />
 
                     {menuItems.map((item) => (
                         <button
@@ -291,7 +615,7 @@ const AccountSettings = () => {
                         {/* Email Section: 18px below divider */}
                         <div className="mt-[18px] w-full flex flex-col items-start relative px-0">
                             <span className="text-black font-medium text-[14px] leading-none">Email ID</span>
-                            <div 
+                            <div
                                 className="mt-[4px] w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
                                 onClick={() => navigate('/account-settings/email')}
                             >
@@ -314,9 +638,1172 @@ const AccountSettings = () => {
                         </div>
                     </div>
                 )}
+
+                {activeTab === "Security" && (
+                    <div className="w-full flex flex-col items-start px-0 flex-1">
+                        {securityStep === "list" ? (
+                            <>
+                                {/* Icon and Title Row: 19px below slider menu */}
+                                <div className="mt-[19px] flex items-center">
+                                    <img src={securityIcon} alt="Security" className="w-[24px] h-[24px]" />
+                                    <h2 className="ml-[12px] text-black font-bold text-[22px] leading-tight">
+                                        Security
+                                    </h2>
+                                </div>
+
+                                {/* Logging in Section: 18px below */}
+                                <h2 className="mt-[18px] text-black font-bold text-[22px] leading-tight">
+                                    Logging in to Grid.pe
+                                </h2>
+
+                                {/* Security Options: 19px below heading */}
+                                <div className="mt-[19px] w-full flex flex-col gap-[22px]">
+                                    {/* Passkeys */}
+                                    <div 
+                                        className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
+                                        onClick={() => setSecurityStep("passkeys")}
+                                    >
+                                        <div className="flex flex-col items-start text-left">
+                                            <span className="text-black font-medium text-[14px] leading-tight">Passkeys</span>
+                                            <span className="mt-[2px] text-black/50 font-medium text-[12px] leading-tight w-[267px]">
+                                                Passkeys are easier and more secure than passwords
+                                            </span>
+                                        </div>
+                                        <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
+                                    </div>
+
+                                    {/* Authenticator App */}
+                                    <div 
+                                        className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
+                                        onClick={() => {
+                                            if (!isAuthenticatorActive) {
+                                                setSecurityStep("authenticator");
+                                            }
+                                        }}
+                                    >
+                                        <div className="flex flex-col items-start text-left">
+                                            <span className="text-black font-medium text-[14px] leading-tight">Authenticator App</span>
+                                            {!isAuthenticatorActive && (
+                                                <span className="mt-[2px] text-black/50 font-medium text-[12px] leading-tight w-[267px]">
+                                                    Set up your authenticator app to add an extra layer of security
+                                                </span>
+                                            )}
+                                        </div>
+                                        {isAuthenticatorActive ? (
+                                            <button 
+                                                className="h-[24px] px-[12px] bg-[#FFF0F0] rounded-full flex items-center justify-center transition-transform active:scale-95"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setIsAuthenticatorActive(false);
+                                                }}
+                                            >
+                                                <span className="text-[#FF4D4D] text-[12px] font-bold">Remove</span>
+                                            </button>
+                                        ) : (
+                                            <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
+                                        )}
+                                    </div>
+
+                                    {/* 2-step verification */}
+                                    <div 
+                                        className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
+                                        onClick={() => setSecurityStep("two_step_intro")}
+                                    >
+                                        <div className="flex flex-col items-start text-left">
+                                            <span className="text-black font-medium text-[14px] leading-tight">2-step verification</span>
+                                            <span className="mt-[2px] text-black/50 font-medium text-[12px] leading-tight w-[267px]">
+                                                Add additional security to your account with 2-step verification.
+                                            </span>
+                                        </div>
+                                        <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
+                                    </div>
+                                </div>
+
+                                {/* Divider: 26px below */}
+                                <div className="mt-[26px] w-[362px] h-[1px] bg-[#E9EAEB]" />
+
+                                {/* KYC Section: 12px below divider */}
+                                <div className="mt-[12px] w-full flex flex-col items-start px-0">
+                                    <h2 className="text-black font-bold text-[22px] leading-tight">KYC</h2>
+                                    <p className="mt-[6px] text-black font-medium text-[15px] leading-tight text-left">
+                                        Your KYC seems to be completed at the time of onboarding. If there’s any error in your KYC verification process, it will show up in this section.
+                                    </p>
+                                </div>
+
+                                {/* Divider: 24px below KYC */}
+                                <div className="mt-[24px] w-[362px] h-[1px] bg-[#E9EAEB]" />
+
+                                {/* Login Activity Section: 12px below divider */}
+                                <div className="mt-[12px] w-full flex flex-col items-start px-0">
+                                    <h2 className="text-black font-bold text-[22px] leading-tight">Login Activity</h2>
+                                    <p className="mt-[6px] text-black font-medium text-[15px] leading-tight text-left">
+                                        You’re logged in or have logged in on these devices within the last 30 days. Multiple logins from the same device may appear.
+                                    </p>
+                                </div>
+
+                                {/* Device Login Containers: 16px spacing, only show if separate logins exist */}
+                                {loginDevices.length >= 1 && (
+                                    <div className={`mt-[16px] w-[362px] flex flex-col gap-[12px] mb-10 shrink-0 ${loginDevices.length >= 2 ? 'overflow-y-auto max-h-[400px]' : ''}`}>
+                                        {loginDevices.map((device) => (
+                                            <div key={device.id} className="w-[362px] h-auto p-[10px] rounded-[12px] border border-[#E9EAEB] flex items-start shrink-0">
+                                                <img src={phoneIcon} alt="Phone" className="w-[24px] h-[24px] shrink-0" />
+                                                <div className="ml-[10px] flex flex-col items-start px-0">
+                                                    {/* Device Name: 15px Medium Black */}
+                                                    <span className="text-black font-medium text-[15px] leading-tight text-left">
+                                                        {device.model}
+                                                    </span>
+
+                                                    {/* Status: 12px Bold Purple/Black, 6px below device name */}
+                                                    <span
+                                                        className={`mt-[6px] font-bold text-[12px] leading-tight text-left ${device.lastActive === "current" ? "text-[#5260FE]" : "text-black"}`}
+                                                    >
+                                                        {device.lastActive === "current" ? "Your current login" : `Last active at: ${device.lastActive}`}
+                                                    </span>
+
+                                                    {/* Location: 12px Bold Black, 6px below status */}
+                                                    <span className="mt-[6px] text-black font-bold text-[12px] leading-tight text-left">
+                                                        {device.city}
+                                                    </span>
+
+                                                    {/* App Name: 12px Bold Black, 6px below location */}
+                                                    <span className="mt-[6px] text-black font-bold text-[12px] leading-tight text-left">
+                                                        {device.app}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
+                        ) : securityStep === "passkeys" ? (
+                            <div className="w-full flex-1 flex flex-col">
+                                {/* Header: Shield + Title */}
+                                <div className="mt-[29px] flex items-center gap-[12px]">
+                                    <img src={shieldIcon} alt="Security" className="w-[24px] h-[24px]" />
+                                    <h2 className="text-black font-bold text-[22px] leading-tight text-left">
+                                        Create a passkey
+                                    </h2>
+                                </div>
+
+                                {/* Description */}
+                                <div className="mt-[24px] flex flex-col gap-[4px]">
+                                    <p className="text-black font-medium text-[15px] leading-tight text-left">
+                                        Passkeys are easier and more secure.
+                                    </p>
+                                    <p className="text-black font-medium text-[15px] leading-tight text-left">
+                                        With passkeys, you can log in to Grid.pe with:
+                                    </p>
+                                </div>
+
+                                {/* List of methods */}
+                                <div className="mt-[24px] flex flex-col gap-[18px]">
+                                    <div className="flex items-center gap-[12px]">
+                                        <img src={faceIdIcon} alt="Face ID" className="w-[24px] h-[24px]" />
+                                        <span className="text-black font-medium text-[16px]">Face ID</span>
+                                    </div>
+                                    <div className="flex items-center gap-[12px]">
+                                        <img src={fingerprintIcon} alt="Touch ID" className="w-[24px] h-[24px]" />
+                                        <span className="text-black font-medium text-[16px]">Touch ID</span>
+                                    </div>
+                                    <div className="flex items-center gap-[12px]">
+                                        <img src={passcodeIcon} alt="Passcode" className="w-[24px] h-[24px]" />
+                                        <span className="text-black font-medium text-[16px]">Passcode</span>
+                                    </div>
+                                </div>
+
+                                {/* Buttons at bottom */}
+                                <div className="mt-auto pb-[32px] flex flex-col gap-[12px] w-full">
+                                    <button 
+                                        className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
+                                        onClick={() => setShowPasskeySheet(true)}
+                                    >
+                                        Create passkey
+                                    </button>
+                                    <button 
+                                        className="w-full h-[48px] rounded-full border border-black bg-white text-black font-medium text-[16px] transition-transform active:scale-[0.98]"
+                                        onClick={() => setSecurityStep("list")}
+                                    >
+                                        Not Now
+                                    </button>
+                                </div>
+                            </div>
+                        ) : securityStep === "authenticator" ? (
+                            <div className="w-full flex-1 flex flex-col">
+                                {/* Header: Shield + Title */}
+                                <div className="mt-[29px] flex items-center gap-[12px]">
+                                    <img src={shieldIcon} alt="Security" className="w-[24px] h-[24px]" />
+                                    <h2 className="text-black font-bold text-[22px] leading-tight text-left">
+                                        Authentication Instructions
+                                    </h2>
+                                </div>
+
+                                {/* QR Code Section */}
+                                <div className="mt-[32px] flex flex-col items-center">
+                                    <img src={qrCodeImg} alt="QR Code" className="w-[150px] h-[150px]" />
+                                    
+                                    <span className="mt-[32px] text-black font-bold text-[18px] text-center max-w-[300px] leading-tight break-all">
+                                        6EJN-7ZBA-VO63-X6BE-42DI-ZBT2-BKPR-3YR7
+                                    </span>
+                                    
+                                    <button 
+                                        className="mt-[20px] h-[34px] px-[20px] bg-[#E9EAEB] rounded-full text-black font-medium text-[14px] flex items-center justify-center transition-transform active:scale-95"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText("6EJN-7ZBA-VO63-X6BE-42DI-ZBT2-BKPR-3YR7");
+                                        }}
+                                    >
+                                        Copy Key
+                                    </button>
+                                </div>
+
+                                {/* Instructions List */}
+                                <div className="mt-[40px] flex flex-col gap-[12px] px-0">
+                                    <div className="flex gap-[12px] items-start">
+                                        <span className="text-black font-medium text-[15px] leading-tight">1.</span>
+                                        <p className="text-black font-medium text-[15px] leading-tight text-left">
+                                            Get an authenticator app on your phone or computer (e.g. Google Authenticator, Duo)
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-[12px] items-start">
+                                        <span className="text-black font-medium text-[15px] leading-tight">2.</span>
+                                        <p className="text-black font-medium text-[15px] leading-tight text-left">
+                                            Scan the QR code or copy the key to your preferred authenticator app.
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-[12px] items-start">
+                                        <span className="text-black font-medium text-[15px] leading-tight">3.</span>
+                                        <p className="text-black font-medium text-[15px] leading-tight text-left">
+                                            Enter the 6-digit code generated by your authenticator app on the next screen.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Next Button */}
+                                <div className="mt-auto pb-[32px] w-full">
+                                    <button 
+                                        className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
+                                        onClick={() => setSecurityStep("authenticator_otp")}
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        ) : securityStep === "authenticator_otp" ? (
+                            <div className="w-full flex-1 flex flex-col">
+                                {/* Header: Shield + Title */}
+                                <div className="mt-[29px] flex items-center gap-[12px]">
+                                    <img src={shieldIcon} alt="Security" className="w-[24px] h-[24px]" />
+                                    <h2 className="text-black font-bold text-[22px] leading-tight text-left">
+                                        Authentication Instructions
+                                    </h2>
+                                </div>
+
+                                {/* Subtext */}
+                                <p className="mt-[25px] text-black font-medium text-[15px] leading-tight text-left">
+                                    Enter the 6-digit code generated by your authenticator app
+                                </p>
+
+                                {/* OTP Input Boxes */}
+                                <div className="mt-[32px] flex gap-[8px] justify-start">
+                                    {authenticatorOtp.map((digit, index) => (
+                                        <input
+                                            key={index}
+                                            ref={(el) => { otpInputs.current[index] = el; }}
+                                            type="text"
+                                            maxLength={1}
+                                            value={digit}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                if (isNaN(Number(val))) return;
+                                                const newOtp = [...authenticatorOtp];
+                                                newOtp[index] = val;
+                                                setAuthenticatorOtp(newOtp);
+                                                if (val !== '' && index < 5) {
+                                                    otpInputs.current[index + 1]?.focus();
+                                                }
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Backspace' && authenticatorOtp[index] === '' && index > 0) {
+                                                    otpInputs.current[index - 1]?.focus();
+                                                }
+                                            }}
+                                            className="w-[52px] h-[68px] bg-[#F7F8FA] border border-[#E6E8EB] rounded-[8px] text-center text-[24px] font-medium focus:border-[#5260FE] outline-none transition-colors"
+                                        />
+                                    ))}
+                                </div>
+
+                                {/* Next Button */}
+                                <div className="mt-auto pb-[32px] w-full">
+                                    <button 
+                                        className={`w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98] ${authenticatorOtp.join('').length === 6 ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}
+                                        onClick={() => {
+                                            if (authenticatorOtp.join('') === "123456") {
+                                                setIsAuthenticatorActive(true);
+                                                setSelectedMethod("auth");
+                                                if (securityStep === "authenticator_otp") {
+                                                    // If we came from 2-step setup, go to dashboard
+                                                    setSecurityStep("two_step_dashboard");
+                                                } else {
+                                                    setSecurityStep("list");
+                                                }
+                                                setAuthenticatorOtp(['', '', '', '', '', '']);
+                                            } else {
+                                                alert("Invalid OTP. Try 123456");
+                                            }
+                                        }}
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        ) : securityStep === "two_step_intro" ? (
+                            <div className="w-full flex-1 flex flex-col">
+                                {/* Header: Shield + Title */}
+                                <div className="mt-[29px] flex items-center gap-[12px]">
+                                    <img src={shieldIcon} alt="Security" className="w-[24px] h-[24px]" />
+                                    <h2 className="text-black font-bold text-[22px] leading-tight text-left">
+                                        2-step verification
+                                    </h2>
+                                </div>
+
+                                {/* Description */}
+                                <div className="mt-[24px] flex flex-col gap-[20px]">
+                                    <p className="text-black font-medium text-[15px] leading-tight text-left">
+                                        Add extra security to your account with 2-step verification and prevent unauthorized access to your account.
+                                    </p>
+                                    <p className="text-black font-medium text-[15px] leading-tight text-left">
+                                        2-step verification requires an additional authentication step when logging in to your account.
+                                    </p>
+                                </div>
+
+                                {/* Buttons at bottom */}
+                                <div className="mt-auto pb-[32px] flex flex-col gap-[12px] w-full">
+                                    <button 
+                                        className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
+                                        onClick={() => {
+                                            if (email) {
+                                                setSecurityStep("two_step_method");
+                                            } else {
+                                                setSecurityStep("two_step_email");
+                                            }
+                                        }}
+                                    >
+                                        Get Started
+                                    </button>
+                                    <button 
+                                        className="w-full h-[48px] rounded-full border border-black bg-white text-black font-medium text-[16px] transition-transform active:scale-[0.98]"
+                                        onClick={() => setSecurityStep("list")}
+                                    >
+                                        Not Now
+                                    </button>
+                                </div>
+                            </div>
+                        ) : securityStep === "two_step_email" ? (
+                            <div className="w-full flex-1 flex flex-col">
+                                {/* Header: Title */}
+                                <div className="mt-[26px]">
+                                    <h2 className="text-black font-bold text-[22px] leading-tight text-left">
+                                        Email ID
+                                    </h2>
+                                </div>
+
+                                {/* Description */}
+                                <p className="mt-[24px] text-black font-medium text-[15px] leading-tight text-left">
+                                    You'll use this email to receive messages, sign in and recover your account.
+                                </p>
+
+                                {/* Input Section */}
+                                <div className="mt-[24px] flex flex-col gap-[8px]">
+                                    <div className="w-full h-[48px] px-[16px] bg-[#F7F8FA] border border-[#E6E8EB] rounded-full flex items-center">
+                                        <input 
+                                            type="email"
+                                            placeholder="Enter your email ID"
+                                            value={tempEmail}
+                                            onChange={(e) => {
+                                                setTempEmail(e.target.value);
+                                                if (emailError) setEmailError("");
+                                            }}
+                                            className="w-full bg-transparent text-black font-medium text-[16px] outline-none placeholder:text-black/50 placeholder:font-medium placeholder:text-[14px]"
+                                        />
+                                    </div>
+                                    {emailError ? (
+                                        <p className="text-[#FF4D4D] font-medium text-[12px] leading-tight text-left">
+                                            {emailError}
+                                        </p>
+                                    ) : (
+                                        <p className="text-black/50 font-medium text-[12px] leading-tight text-left">
+                                            A verification code will be sent to this email
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* Update Button */}
+                                <div className="mt-auto pb-[32px] w-full">
+                                    <button 
+                                        className={`w-full h-[48px] rounded-full font-medium text-[16px] transition-transform active:scale-[0.98] ${tempEmail ? 'bg-[#5260FE] text-white opacity-100' : 'bg-[#E0E2FF] text-white opacity-100 cursor-not-allowed'}`}
+                                        disabled={!tempEmail}
+                                        onClick={() => {
+                                            if (!tempEmail.includes("@") || !tempEmail.toLowerCase().includes(".com")) {
+                                                setEmailError("Please enter a valid email id");
+                                            } else {
+                                                setEmailError("");
+                                                setSecurityStep("two_step_otp");
+                                            }
+                                        }}
+                                    >
+                                        Update
+                                    </button>
+                                </div>
+                            </div>
+                        ) : securityStep === "two_step_otp" ? (
+                            <div className="w-full flex-1 flex flex-col">
+                                {/* Header: Shield + Title */}
+                                <div className="mt-[29px] flex items-center gap-[12px]">
+                                    <img src={shieldIcon} alt="Security" className="w-[24px] h-[24px]" />
+                                    <h2 className="text-black font-bold text-[22px] leading-tight text-left">
+                                        2-step verification
+                                    </h2>
+                                </div>
+
+                                {/* Instruction Text */}
+                                <div className="mt-[24px]">
+                                    <p className="text-black font-medium text-[14px] leading-[1.4] text-left">
+                                        Enter the 6-digit code received in your registered email id <span className="font-bold">{tempEmail || "your email"}</span>
+                                    </p>
+                                </div>
+
+                                {/* OTP Inputs */}
+                                <div className="mt-[16px] flex gap-[8px] justify-start">
+                                    {twoStepOtp.map((digit, index) => (
+                                        <input
+                                            key={index}
+                                            ref={(el) => { twoStepOtpInputs.current[index] = el; }}
+                                            type="text"
+                                            maxLength={1}
+                                            value={digit}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                if (isNaN(Number(val))) return;
+                                                const newOtp = [...twoStepOtp];
+                                                newOtp[index] = val;
+                                                setTwoStepOtp(newOtp);
+                                                if (val !== '' && index < 5) {
+                                                    twoStepOtpInputs.current[index + 1]?.focus();
+                                                }
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Backspace' && twoStepOtp[index] === '' && index > 0) {
+                                                    twoStepOtpInputs.current[index - 1]?.focus();
+                                                }
+                                            }}
+                                            className="w-[52px] h-[68px] bg-[#F7F8FA] border border-[#E6E8EB] rounded-[8px] text-center text-[24px] font-medium focus:border-[#5260FE] outline-none transition-colors"
+                                        />
+                                    ))}
+                                </div>
+
+                                {/* Resend Link */}
+                                <div className="mt-[12px] flex justify-end w-full pr-[2px]">
+                                    <span className="text-[#5260FE] font-medium text-[14px] cursor-pointer">
+                                        Resend OTP in 20s
+                                    </span>
+                                </div>
+
+                                {/* Tip Text */}
+                                <p className="mt-[16px] text-black/50 font-medium text-[14px] text-left">
+                                    Tip: Make sure to check your spam folders.
+                                </p>
+
+                                {/* Next Button */}
+                                <div className="mt-auto pb-[32px] w-full">
+                                    <button 
+                                        className={`w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98] ${twoStepOtp.join('').length === 6 ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}
+                                        onClick={() => {
+                                            if (twoStepOtp.join('') === "123456") {
+                                                setSecurityStep("two_step_method");
+                                                setTwoStepOtp(['', '', '', '', '', '']);
+                                            } else {
+                                                alert("Invalid OTP. Try 123456");
+                                            }
+                                        }}
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        ) : securityStep === "two_step_method" ? (
+                            <div className="w-full flex-1 flex flex-col">
+                                {/* Header: Title */}
+                                <div className="mt-[26px]">
+                                    <h2 className="text-black font-bold text-[22px] leading-tight text-left">
+                                        Choose a verification method
+                                    </h2>
+                                </div>
+
+                                {/* Description */}
+                                <p className="mt-[24px] text-black font-medium text-[16px] leading-tight text-left w-[362px]">
+                                    Add extra security to your account with 2-step verification.
+                                </p>
+
+                                {/* Options List */}
+                                <div className="mt-[25px] flex flex-col gap-[16px]">
+                                    {/* Text message (SMS) */}
+                                    <div 
+                                        className="flex items-center justify-between cursor-pointer active:bg-gray-50 transition-colors"
+                                        onClick={() => {
+                                            setSecurityStep("two_step_phone");
+                                        }}
+                                    >
+                                        <div className="flex flex-col gap-[4px] pr-[20px]">
+                                            <span className="text-black font-medium text-[14px] leading-tight">
+                                                Text message (SMS)
+                                            </span>
+                                            <span className="text-black/50 font-medium text-[12px] leading-[1.3]">
+                                                You'll receive verification codes via text messages when you log into your account
+                                            </span>
+                                        </div>
+                                        <img src={chevronForward} alt="Arrow" className="w-[20px] h-[20px] flex-shrink-0" />
+                                    </div>
+
+                                    {/* Authenticator app */}
+                                    <div 
+                                        className="flex items-center justify-between cursor-pointer active:bg-gray-50 transition-colors"
+                                        onClick={() => {
+                                            setSecurityStep("authenticator");
+                                        }}
+                                    >
+                                        <div className="flex flex-col gap-[4px] pr-[20px]">
+                                            <span className="text-black font-medium text-[14px] leading-tight">
+                                                Authenticator app
+                                            </span>
+                                            <span className="text-black/50 font-medium text-[12px] leading-[1.3]">
+                                                You'll use a verification code generated by an authenticator app such as Google Authenticator or Duo Mobile when you log into your account
+                                            </span>
+                                        </div>
+                                        <img src={chevronForward} alt="Arrow" className="w-[20px] h-[20px] flex-shrink-0" />
+                                    </div>
+                                </div>
+                            </div>
+                        ) : securityStep === "two_step_phone" ? (
+                            <div className="w-full flex-1 flex flex-col">
+                                {/* Header: Title */}
+                                <div className="mt-[26px]">
+                                    <h2 className="text-black font-bold text-[22px] leading-tight text-left">
+                                        Phone number
+                                    </h2>
+                                </div>
+
+                                {/* Description */}
+                                <p className="mt-[24px] text-black font-medium text-[15px] leading-tight text-left">
+                                    You'll use this number to get notifications, sign in and recover your account.
+                                </p>
+
+                                {/* Input Section */}
+                                <div className="mt-[24px] flex flex-col gap-[8px]">
+                                    <div className="w-full h-[48px] px-[16px] bg-[#F7F8FA] border border-[#E6E8EB] rounded-full flex items-center">
+                                        <div className="flex items-center gap-[12px] pr-[12px] border-r border-[#E6E8EB]">
+                                            <span className="text-black/50 font-medium text-[16px]">+91</span>
+                                        </div>
+                                        <input 
+                                            type="tel"
+                                            placeholder="9876543210"
+                                            value={tempPhone}
+                                            onChange={(e) => {
+                                                const val = e.target.value.replace(/\D/g, '');
+                                                if (val.length <= 10) setTempPhone(val);
+                                            }}
+                                            className="ml-[12px] w-full bg-transparent text-black font-medium text-[16px] outline-none placeholder:text-black/50 placeholder:font-medium placeholder:text-[16px]"
+                                        />
+                                    </div>
+                                    <p className="text-black/50 font-medium text-[12px] leading-tight text-left">
+                                        A verification code will be sent to this number
+                                    </p>
+                                </div>
+
+                                {/* Continue Button */}
+                                <div className="mt-auto pb-[32px] w-full">
+                                    <button 
+                                        className={`w-full h-[48px] rounded-full font-medium text-[16px] transition-transform active:scale-[0.98] ${tempPhone.length === 10 ? 'bg-[#5260FE] text-white' : 'bg-[#E0E2FF] text-white cursor-not-allowed'}`}
+                                        disabled={tempPhone.length !== 10}
+                                        onClick={() => setSecurityStep("two_step_phone_otp")}
+                                    >
+                                        Continue
+                                    </button>
+                                </div>
+                            </div>
+                        ) : securityStep === "two_step_phone_otp" ? (
+                            <div className="w-full flex-1 flex flex-col">
+                                {/* Header: Title */}
+                                <div className="mt-[26px]">
+                                    <h2 className="text-black font-bold text-[22px] leading-tight text-left">
+                                        Phone number
+                                    </h2>
+                                </div>
+
+                                {/* Instruction Text */}
+                                <div className="mt-[24px]">
+                                    <p className="text-black font-medium text-[14px] leading-[1.4] text-left">
+                                        Enter the 6-digit code sent to you at <span className="font-bold">+91 {tempPhone}</span>
+                                    </p>
+                                </div>
+
+                                {/* OTP Inputs */}
+                                <div className="mt-[32px] flex gap-[8px] justify-start">
+                                    {phoneOtp.map((digit, index) => (
+                                        <input
+                                            key={index}
+                                            ref={(el) => { phoneOtpInputs.current[index] = el; }}
+                                            type="text"
+                                            maxLength={1}
+                                            value={digit}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                if (isNaN(Number(val))) return;
+                                                const newOtp = [...phoneOtp];
+                                                newOtp[index] = val;
+                                                setPhoneOtp(newOtp);
+                                                if (val !== '' && index < 5) {
+                                                    phoneOtpInputs.current[index + 1]?.focus();
+                                                }
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Backspace' && phoneOtp[index] === '' && index > 0) {
+                                                    phoneOtpInputs.current[index - 1]?.focus();
+                                                }
+                                            }}
+                                            className="w-[52px] h-[68px] bg-[#F7F8FA] border border-[#E6E8EB] rounded-[8px] text-center text-[24px] font-medium focus:border-[#5260FE] outline-none transition-colors"
+                                        />
+                                    ))}
+                                </div>
+
+                                {/* Resend Link */}
+                                <div className="mt-[12px] flex justify-end w-full pr-[2px]">
+                                    <span className="text-[#5260FE] font-medium text-[14px] cursor-pointer">
+                                        Resend OTP in 20s
+                                    </span>
+                                </div>
+
+                                {/* Next Button */}
+                                <div className="mt-auto pb-[32px] w-full">
+                                    <button 
+                                        className={`w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98] ${phoneOtp.join('').length === 6 ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}
+                                        onClick={() => {
+                                            if (phoneOtp.join('') === "123456") {
+                                                setSecurityStep("two_step_backup_codes");
+                                                setPhoneOtp(['', '', '', '', '', '']);
+                                            } else {
+                                                alert("Invalid OTP. Try 123456");
+                                            }
+                                        }}
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        ) : securityStep === "two_step_backup_codes" ? (
+                            <div className="w-full flex-1 flex flex-col">
+                                {/* Header: Title */}
+                                <div className="mt-[26px]">
+                                    <h2 className="text-black font-bold text-[22px] leading-tight text-left">
+                                        Backup codes
+                                    </h2>
+                                </div>
+
+                                {/* Description */}
+                                <p className="mt-[24px] text-black font-medium text-[15px] leading-tight text-left">
+                                    Screenshot these codes and store them in a safe place. If you have trouble receiving a verification code, you can use one of these codes instead. Each code can only be used once. <span className="font-bold underline cursor-pointer">Learn more</span>
+                                </p>
+
+                                {/* Backup Codes List */}
+                                <div className="mt-[32px] flex flex-col gap-[8px]">
+                                    {backupCodes.map((code, i) => (
+                                        <span key={i} className="text-black font-bold text-[22px] leading-tight text-left">
+                                            {code}
+                                        </span>
+                                    ))}
+                                </div>
+
+                                {/* Buttons at bottom */}
+                                <div className="mt-auto pb-[32px] flex flex-col gap-[12px] w-full">
+                                    {!fromDashboard && (
+                                        <button 
+                                            className="w-full h-[48px] rounded-full bg-[#5260FE] text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
+                                            onClick={() => setSecurityStep("two_step_dashboard")}
+                                        >
+                                            Save
+                                        </button>
+                                    )}
+                                    <button 
+                                        className={`w-full h-[48px] rounded-full border border-[#5260FE] bg-white text-[#5260FE] font-medium text-[16px] transition-transform active:scale-[0.98] ${fromDashboard ? 'mt-auto' : ''}`}
+                                        onClick={generateNewCodes}
+                                    >
+                                        Get new codes
+                                    </button>
+                                </div>
+                            </div>
+                        ) : securityStep === "two_step_dashboard" ? (
+                            <div className="w-full flex-1 flex flex-col">
+                                {/* Header Row with Shield and Title */}
+                                <div className="mt-[26px] flex items-center">
+                                    <img src={shieldIcon} alt="Shield" className="w-[24px] h-[24px]" />
+                                    <h2 className="ml-[12px] text-black font-bold text-[22px] leading-tight text-left">
+                                        2-step verification
+                                    </h2>
+                                </div>
+
+                                {/* Description */}
+                                <p className="mt-[24px] text-black font-medium text-[15px] leading-tight text-left">
+                                    Add extra security to your account with 2-step verification and prevent unauthorized access to your account.
+                                </p>
+
+                                {/* Toggle Row */}
+                                <div className="mt-[32px] w-[362px] h-[50px] px-[13px] bg-transparent border border-[#E6E8EB] rounded-full flex items-center justify-between">
+                                    <span className="text-black font-bold text-[16px]">2-step verification</span>
+                                    <div 
+                                        className={`w-[50px] h-[24px] rounded-full relative cursor-pointer transition-colors duration-200 ${isTwoStepEnabled ? 'bg-[#4CD964]' : 'bg-[#E9E9EB]'}`}
+                                        onClick={() => setIsTwoStepEnabled(!isTwoStepEnabled)}
+                                    >
+                                        <div className={`absolute top-[2px] w-[20px] h-[20px] bg-white rounded-full shadow-md transition-transform duration-200 ${isTwoStepEnabled ? 'translate-x-[28px]' : 'translate-x-[2px]'}`} />
+                                    </div>
+                                </div>
+
+                                {/* Method Selection: Side-by-side */}
+                                <div className="mt-[25px] flex gap-[9px] w-[393px] -ml-[15.5px] pl-[35px] items-center">
+                                    {/* Text Message Container */}
+                                    <div 
+                                        className={`w-[162px] h-[82px] p-[12px] bg-white border ${selectedMethod === 'sms' ? 'border-[#5260FE]' : 'border-[#E6E8EB]'} rounded-[12px] flex flex-col justify-between relative cursor-pointer`}
+                                        onClick={() => {
+                                            setSelectedMethod('sms');
+                                        }}
+                                    >
+                                        <div className="flex justify-between items-start">
+                                            <img src={smsIcon} alt="SMS" className="w-[26px] h-[26px]" />
+                                            <div className={`w-[20px] h-[20px] rounded-full border ${selectedMethod === 'sms' ? 'border-[6px] border-[#5260FE]' : 'border-2 border-[#E6E8EB]'}`} />
+                                        </div>
+                                        <span className="text-black font-bold text-[14px]">Text message</span>
+                                    </div>
+
+                                    {/* Authenticator App Container */}
+                                    <div 
+                                        className={`w-[162px] h-[82px] p-[12px] bg-white border ${selectedMethod === 'auth' ? 'border-[#5260FE]' : 'border-[#E6E8EB]'} rounded-[12px] flex flex-col justify-between relative cursor-pointer`}
+                                        onClick={() => {
+                                            if (isAuthenticatorActive) {
+                                                setSelectedMethod('auth');
+                                            } else {
+                                                setSecurityStep("authenticator");
+                                            }
+                                        }}
+                                    >
+                                        <div className="flex justify-between items-start">
+                                            <img src={authenticatorIcon} alt="Auth" className="w-[26px] h-[26px]" />
+                                            <div className={`w-[20px] h-[20px] rounded-full border ${selectedMethod === 'auth' ? 'border-[6px] border-[#5260FE]' : 'border-2 border-[#E6E8EB]'}`} />
+                                        </div>
+                                        <span className="text-black font-bold text-[14px]">Authenticator app</span>
+                                    </div>
+                                </div>
+
+                                {/* Backup Codes Row */}
+                                <div 
+                                    className="mt-[35px] flex items-center justify-between cursor-pointer active:bg-gray-50 transition-colors"
+                                    onClick={() => {
+                                        setFromDashboard(true);
+                                        setSecurityStep("two_step_backup_codes");
+                                    }}
+                                >
+                                    <div className="flex flex-col gap-[4px] pr-[20px]">
+                                        <span className="text-black font-medium text-[14px] leading-tight">
+                                            Backup codes
+                                        </span>
+                                        <span className="text-black/50 font-medium text-[12px] leading-[1.3] w-[267px]">
+                                            Use a backup code to log in if you lose access to your phone or can't log in through your preferred security method
+                                        </span>
+                                    </div>
+                                    <img src={chevronForward} alt="Arrow" className="w-[20px] h-[20px] flex-shrink-0" />
+                                </div>
+                            </div>
+                        ) : null}
+                    </div>
+                )}
+
+                {activeTab === "Privacy & Data" && (
+                    <div className="w-full flex flex-col items-start px-0">
+                        {/* Icon and Title Row: 19px below slider menu */}
+                        <div className="mt-[19px] flex items-center shrink-0">
+                            <img src={privacyDataIcon} alt="Privacy" className="w-[24px] h-[24px]" />
+                            <h2 className="ml-[12px] text-black font-bold text-[22px] leading-tight text-left">
+                                Privacy & Data
+                            </h2>
+                        </div>
+
+                        {/* Privacy Section: 18px below */}
+                        <h2 className="mt-[18px] text-black font-bold text-[22px] leading-tight text-left shrink-0">
+                            Privacy
+                        </h2>
+
+                        {/* Privacy Rows: 19px below heading */}
+                        <div className="mt-[19px] w-full flex flex-col gap-[22px] shrink-0">
+                            {/* Privacy Centre */}
+                            <div className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform">
+                                <div className="flex flex-col items-start text-left">
+                                    <span className="text-black font-medium text-[14px] leading-tight text-left">Privacy Centre</span>
+                                    <span className="mt-[2px] text-black/50 font-medium text-[12px] leading-tight text-left">
+                                        Take control of your privacy and learn how we protect it.
+                                    </span>
+                                </div>
+                                <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
+                            </div>
+
+                            {/* Communication Preferences */}
+                            <div className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform">
+                                <div className="flex flex-col items-start text-left">
+                                    <span className="text-black font-medium text-[14px] leading-tight text-left">Communication Preferences</span>
+                                    <span className="mt-[2px] text-black/50 font-medium text-[12px] leading-tight text-left">
+                                        Manage how Grid.pe contacts you.
+                                    </span>
+                                </div>
+                                <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
+                            </div>
+                        </div>
+
+                        {/* Divider: 26px below */}
+                        <div className="mt-[26px] w-[362px] h-[1px] bg-[#E9EAEB] shrink-0" />
+
+                        {/* Documents & Data uploaded Section: 12px below divider */}
+                        <div className="mt-[12px] w-full flex flex-col items-start px-0 shrink-0">
+                            <h2 className="text-black font-bold text-[22px] leading-tight text-left">Documents & Data uploaded</h2>
+                            <p className="mt-[6px] text-black font-medium text-[15px] leading-tight text-left">
+                                Documents uploaded by you for your KYC. You can update them once it expires or if you are needed to re-do the KYC procedure again.
+                            </p>
+                        </div>
+                        {/* Data Container: 24px below description */}
+                        <div className="mt-[24px] w-[362px] h-auto p-[16px] rounded-[12px] border border-[#E6E8EB] flex flex-col gap-[16px] mb-8 shrink-0">
+                            {/* Dynamic Document row */}
+                            {kycDoc && ( // Conditionally render if kycDoc data is available
+                                <div className="w-full flex items-center justify-between">
+                                    <div className="flex flex-col items-start text-left">
+                                        <span className="text-black font-medium text-[14px] leading-tight text-left">
+                                            {kycDoc.label}
+                                        </span>
+                                        <div className="mt-[4px] flex items-center gap-[6px]">
+                                            <span className="text-[#5260FE] font-medium text-[14px] leading-tight text-left">
+                                                {kycDoc.number}
+                                            </span>
+                                            <img src={verifiedBadge} alt="Verified" className="w-[16px] h-[16px]" />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === "Banking" && (
+                    <div className="w-full flex-1 flex flex-col items-start px-0">
+                        {bankingStep === "list" ? (
+                            <>
+                                {/* Initial Banking View */}
+                                {/* Header Row: 19px below slider menu */}
+                                <div className="mt-[19px] flex items-center shrink-0">
+                                    <img src={bankIcon} alt="Banking" className="w-[24px] h-[24px]" />
+                                    <h2 className="ml-[12px] text-black font-bold text-[22px] leading-tight text-left">
+                                        Banking
+                                    </h2>
+                                </div>
+
+                                {/* Description: 18px below */}
+                                <p className="mt-[18px] text-black font-medium text-[14px] leading-tight text-left shrink-0">
+                                    {addedAccounts.length > 0 
+                                        ? "Manage your bank accounts here. Your primary account will be used for all payouts. Primary bank accounts cannot be deleted, as it is required for your Payout."
+                                        : "You don't have any bank accounts added yet. Please add a bank account, this is the account where you will receive your payouts. So make sure all the details entered are correct."
+                                    }
+                                </p>
+
+                                {/* Section Title: 24px below */}
+                                <h2 className="mt-[24px] text-black font-bold text-[22px] leading-tight text-left shrink-0">
+                                    Bank Accounts
+                                </h2>
+
+                                {addedAccounts.length === 0 ? (
+                                    /* Empty State Card: 12px below heading */
+                                    <div className="mt-[12px] w-[362px] h-[124px] rounded-[12px] border border-[#E9EAEB] flex items-center justify-center p-[20px] shrink-0">
+                                        <p className="text-[#A0A0A0] font-medium text-[14px] leading-tight text-center w-[334px]">
+                                            You don't have any bank accounts added yet. Please add a bank account to proceed.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Bank Account Cards List: 12px below heading */}
+                                        <div className="mt-[12px] w-full flex flex-col gap-[12px] shrink-0">
+                                            {addedAccounts.map((acc, index) => (
+                                                <SwipeableBankCard 
+                                                    key={acc.id}
+                                                    acc={acc}
+                                                    index={index}
+                                                    onDelete={handleDeleteAccount}
+                                                    getBankLogo={getBankLogo}
+                                                />
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Spacer to push button to bottom */}
+                                <div className="flex-1 min-h-[40px]" />
+
+                                {/* Add Bank Account CTA */}
+                                <button 
+                                    onClick={handleConnectBank}
+                                    className="w-[362px] h-[48px] bg-black text-white rounded-full font-medium text-[16px] flex items-center justify-center cursor-pointer active:scale-[0.98] transition-transform mb-8 self-center"
+                                >
+                                    Add Another Bank
+                                </button>
+                            </>
+                        ) : bankingStep === "add_wifi" ? (
+                            <>
+                                {/* WiFi Detection "Section" */}
+                                <h2 className="mt-[19px] text-black font-bold text-[22px] leading-tight text-left shrink-0">
+                                    Bank Accounts
+                                </h2>
+                                <div className="mt-[12px] w-[362px] h-auto min-h-[124px] rounded-[12px] border border-[#E9EAEB] flex flex-col items-center justify-center p-[20px] shrink-0">
+                                    <div className="flex flex-col items-center gap-[12px]">
+                                        <p className="text-[#333333] font-medium text-[14px] leading-tight text-center w-[300px]">
+                                            We need to verify this device with your phone number. Please turn off your 'WiFi' and stay connected through mobile data.
+                                        </p>
+                                        <button 
+                                            onClick={() => setBankingStep("validate_sim")} 
+                                            className="w-[322px] h-[48px] bg-black text-white rounded-full font-medium text-[16px] flex items-center justify-center cursor-pointer active:scale-[0.98] transition-transform"
+                                        >
+                                            Turn off WiFi
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex-1" />
+                            </>
+                        ) : bankingStep === "validate_sim" ? (
+                            <>
+                                {/* Validate SIM Card Section */}
+                                <h2 className="mt-[19px] text-black font-bold text-[22px] leading-tight text-left shrink-0">
+                                    Bank Accounts
+                                </h2>
+                                <div className="mt-[12px] w-[362px] h-auto rounded-[12px] border border-[#E9EAEB] flex flex-col items-start p-[20px] shrink-0">
+                                    <div className="flex items-center gap-[10px]">
+                                        <img src={simCardIcon} alt="SIM" className="w-[18px] h-[22px]" />
+                                        <h3 className="text-black font-bold text-[18px]">Validate SIM card</h3>
+                                    </div>
+                                    <p className="mt-[6px] text-[#A0A0A0] font-medium text-[14px] leading-tight text-left">
+                                        Select the linked SIM to verify your number. Please do not go back or close the app.
+                                    </p>
+                                    <div className="mt-[20px] flex gap-[9px] w-full">
+                                        {simCards.map((sim) => (
+                                            <button 
+                                                key={sim.id}
+                                                onClick={() => setSelectedSim(sim.id)}
+                                                className={`flex-1 h-[104px] rounded-[16px] border flex flex-col p-[12px] relative transition-all text-left
+                                                    ${selectedSim === sim.id ? 'border-[#5260FE] bg-white ring-1 ring-[#5260FE]' : 'border-[#E9EAEB] bg-white'}
+                                                `}
+                                            >
+                                                <img src={sim.logo} alt={sim.carrier} className="h-[24px] w-fit object-contain mb-2" />
+                                                <span className="font-bold text-[15px] text-black pt-1">{sim.label}</span>
+                                                <span className="font-medium text-[14px] text-[#A0A0A0]">{sim.carrier}</span>
+                                                <div className="absolute top-[12px] right-[12px]">
+                                                    <img 
+                                                        src={selectedSim === sim.id ? radioSelected : radioNotSelected} 
+                                                        className="w-[20px] h-[20px]" 
+                                                    />
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <p className="mt-[20px] text-black font-bold text-[12px]">Please note: <span className="font-medium text-[#A0A0A0]">regular carrier charges may apply.</span></p>
+                                    <p className="mt-[16px] text-black font-medium text-[14px] leading-tight text-left">
+                                        The message will be auto composed for you, simply select your SIM and tap ‘Verify’. The SMS will appear in the following format:
+                                    </p>
+                                    <div className="mt-[16px] w-full p-[16px] bg-[#F9F9F9] rounded-[12px] border border-[#F0F0F0]">
+                                        <pre className="text-black font-medium text-[14px] font-sans leading-normal">
+                                            DPREG{"\n"}
+                                            9ab12cde-34f5-4a1b-8c7d-92f4e8bb12ef{"\n"}
+                                            9898989898
+                                        </pre>
+                                    </div>
+                                </div>
+                                <div className="flex-1 min-h-[40px]" />
+                                <button 
+                                    onClick={() => setBankingStep("verifying_sim")}
+                                    className="w-[362px] h-[48px] bg-black text-white rounded-full font-medium text-[16px] flex items-center justify-center cursor-pointer active:scale-[0.98] transition-transform mb-8 self-center"
+                                >
+                                    Verify
+                                </button>
+                            </>
+                        ) : bankingStep === "verifying_sim" ? (
+                            <>
+                                {/* Validating SIM (Status) Section */}
+                                <h2 className="mt-[19px] text-black font-bold text-[22px] leading-tight text-left shrink-0">
+                                    Bank Accounts
+                                </h2>
+                                <div className="mt-[12px] w-[362px] h-auto min-h-[174px] rounded-[12px] border border-[#E9EAEB] flex flex-col items-start p-[20px] shrink-0">
+                                    <div className="flex items-center gap-[10px]">
+                                        <img src={simCardIcon} alt="SIM" className="w-[18px] h-[22px]" />
+                                        <h3 className="text-black font-bold text-[18px]">Validating SIM</h3>
+                                    </div>
+                                    <div className="mt-[24px] flex w-full relative pl-[28px]">
+                                        <div className={`absolute left-[9px] top-[14px] w-[2px] h-[60px] z-0
+                                            ${verificationState === 'success' ? 'bg-[#27AE60]' : 'bg-[#E9EAEB]'}
+                                        `} />
+                                        <div className="flex flex-col gap-[28px] w-full">
+                                            <div className="flex items-start gap-[12px] relative">
+                                                <div className="absolute left-[-28px] top-[4px] flex items-center justify-center z-10">
+                                                    {verificationState === 'loading' ? (
+                                                        <div className="w-[20px] h-[20px] rounded-full border-[2px] border-[#5260FE] flex items-center justify-center">
+                                                            <div className="w-[10px] h-[10px] rounded-full bg-[#5260FE] animate-pulse" />
+                                                        </div>
+                                                    ) : verificationState === 'error' ? (
+                                                        <div className="w-[20px] h-[20px] rounded-full bg-red-500 flex items-center justify-center text-white font-bold text-[10px]">!</div>
+                                                    ) : (
+                                                        <img src={successCheckIcon} className="w-[20px] h-[20px]" />
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="text-black font-medium text-[14px]">Sending verification SMS</span>
+                                                    {verificationState === 'error' && <span className="text-red-500 font-medium text-[12px]">Unable to send SMS</span>}
+                                                    {verificationState === 'success' && <span className="text-[#27AE60] font-medium text-[12px]">SMS sent successfully</span>}
+                                                </div>
+                                            </div>
+                                            <div className="flex items-start gap-[12px] relative">
+                                                <div className="absolute left-[-28px] top-[4px] flex items-center justify-center z-10">
+                                                    {verificationState === 'success' ? (
+                                                        <img src={successCheckIcon} className="w-[20px] h-[20px]" />
+                                                    ) : (
+                                                        <div className="w-[20px] h-[20px] rounded-full border-[2px] border-[#E9EAEB]" />
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="text-black font-medium text-[14px]">Verifying Mobile Number</span>
+                                                    {verificationState === 'success' && <span className="text-[#27AE60] font-medium text-[12px]">Verified</span>}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex-1 min-h-[40px]" />
+                                {verificationState === 'loading' ? (
+                                    <button disabled className="w-[362px] h-[48px] bg-[#DFDFDF] text-white rounded-full font-medium text-[16px] flex items-center justify-center mb-8 self-center">
+                                        Setting up please wait...
+                                    </button>
+                                ) : verificationState === 'error' ? (
+                                    <button onClick={() => { setVerificationState("loading"); setTimeout(() => setVerificationState("success"), 3000); }} className="w-[362px] h-[48px] bg-black text-white rounded-full font-medium text-[16px] flex items-center justify-center cursor-pointer active:scale-[0.98] transition-transform mb-8 self-center">
+                                        Retry
+                                    </button>
+                                ) : (
+                                    <button onClick={() => setBankingStep("linked_accounts")} className="w-[362px] h-[48px] bg-black text-white rounded-full font-medium text-[16px] flex items-center justify-center cursor-pointer active:scale-[0.98] transition-transform mb-8 self-center">
+                                        Device Verified
+                                    </button>
+                                )}
+                            </>
+                        ) : bankingStep === "linked_accounts" ? (
+                            <AccountSelectionList 
+                                phoneNumber={riderMobile || "+91 8787311620"}
+                                addedBankNames={addedAccounts.map(a => a.bankName)}
+                                onSelect={(acc) => {
+                                    setSelectedAccount(acc);
+                                }}
+                                onProceed={(acc) => {
+                                    // Normally this would fetch details, but for now we just add it
+                                    setAddedAccounts(prev => [...prev, acc]);
+                                    setSuccessfullyLinkedBank(acc.bankName);
+                                    setBankingStep("success");
+                                }}
+                            />
+                        ) : bankingStep === "success" ? (
+                            <>
+                                {/* Success View */}
+                                <h2 className="mt-[19px] text-black font-bold text-[22px] leading-tight text-left shrink-0">
+                                    Bank Accounts
+                                </h2>
+                                
+                                <div className="flex items-start gap-[12px] mt-[18px]">
+                                    <img src={bankIcon} className="w-[24px] h-[24px]" alt="Bank" />
+                                    <h3 className="text-black font-bold text-[18px] leading-[1.2]">
+                                        {successfullyLinkedBank} has been successfully added!
+                                    </h3>
+                                </div>
+
+                                {/* Newly Added Card */}
+                                <div className="mt-[24px] w-[362px] h-auto p-[16px] rounded-[16px] border border-[#E9EAEB] bg-white flex flex-col relative">
+                                    <div className="flex items-center gap-[12px]">
+                                        <div className="w-[36px] h-[36px] flex items-center justify-center">
+                                            {successfullyLinkedBank && getBankLogo(successfullyLinkedBank) ? (
+                                                <img 
+                                                    src={getBankLogo(successfullyLinkedBank) || undefined} 
+                                                    alt="" 
+                                                    className="w-full h-full object-contain" 
+                                                />
+                                            ) : (
+                                                <div className="w-full h-full rounded-full bg-[#5260FE] flex items-center justify-center text-white font-bold text-[16px]">
+                                                    {successfullyLinkedBank?.charAt(0) || "B"}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <h3 className="text-black font-bold text-[18px] flex-1">{successfullyLinkedBank}</h3>
+                                        {addedAccounts.length === 1 && (
+                                            <div className="h-[24px] px-[12px] rounded-full bg-[#1CB956] flex items-center justify-center">
+                                                <span className="text-white text-[12px] font-bold">Primary</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="mt-[8px] flex flex-col items-start">
+                                        <span className="text-black font-medium text-[14px]">Savings account</span>
+                                        <span className="mt-[4px] text-black font-medium text-[14px]">XXXX XXXX XXXX 0960</span>
+                                        <span className="mt-[4px] text-black font-bold text-[14px]">Rohit Khandelwal</span>
+                                    </div>
+                                </div>
+
+                                <div className="flex-1" />
+
+                                <div className="flex flex-col gap-[12px] w-full mb-8 items-center">
+                                    <button 
+                                        onClick={() => setBankingStep("linked_accounts")}
+                                        className="w-[362px] h-[48px] bg-black text-white rounded-full font-medium text-[16px] flex items-center justify-center cursor-pointer active:scale-[0.98] transition-transform"
+                                    >
+                                        Add another bank
+                                    </button>
+                                    <button 
+                                        onClick={() => setBankingStep("list")}
+                                        className="w-[362px] h-[48px] border border-black text-black rounded-full font-medium text-[16px] flex items-center justify-center cursor-pointer active:scale-[0.98] transition-transform bg-white"
+                                    >
+                                        Save & Exit
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                {/* Bank Details Form Section */}
+                                <h2 className="mt-[19px] text-black font-bold text-[22px] leading-tight text-left shrink-0">
+                                    Add Bank Account
+                                </h2>
+                                <p className="mt-[18px] text-[#A0A0A0] font-medium text-[14px] leading-tight text-left">
+                                    Please enter your bank account details below to receive payouts.
+                                </p>
+                                <div className="mt-[24px] w-[362px] p-4 bg-gray-50 rounded-lg text-center text-gray-400 italic">
+                                    Bank details form section coming soon...
+                                </div>
+                                <div className="flex-1" />
+                            </>
+                        )}
+                    </div>
+                )}
             </div>
+
+            {/* Passkey Bottom Sheet */}
+            {showPasskeySheet && (
+                <PasskeyBottomSheet 
+                    onClose={() => setShowPasskeySheet(false)}
+                    onAddPasskey={() => setShowPasskeySheet(false)}
+                    onOtherDevice={() => setShowPasskeySheet(false)}
+                    email={email || "rohitkhandelwal.email.com"}
+                />
+            )}
         </div>
     );
 };
 
 export default AccountSettings;
+

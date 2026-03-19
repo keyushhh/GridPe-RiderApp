@@ -82,6 +82,10 @@ const OnboardingKYCReview = () => {
                         updatedAt: new Date().toISOString()
                     };
                     localStorage.setItem(`test_data_${phoneNumber}`, JSON.stringify(testData));
+                    
+                    // Also store specific document details for Account Settings and other screens
+                    localStorage.setItem('rider_kyc_doc_type', documentType || 'aadhar');
+                    localStorage.setItem('rider_kyc_doc_number', documentNumber || '');
                 }
                 // ------------------------------------------
             } else {
