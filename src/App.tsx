@@ -21,6 +21,7 @@ import AutoPayout from './pages/AutoPayout'
 import AutoPayoutSuccess from './pages/AutoPayoutSuccess'
 import AccountSettings from './pages/AccountSettings'
 import EditEmail from './pages/EditEmail'
+import Notifications from './pages/Notifications'
 
 function App() {
     return (
@@ -49,6 +50,7 @@ function App() {
                     <Route path="/auto-payout-success" element={<AutoPayoutSuccess />} />
                     <Route path="/account-settings" element={<AccountSettings />} />
                     <Route path="/account-settings/email" element={<EditEmail />} />
+                    <Route path="/notifications" element={<Notifications />} />
                 </Routes>
             </Router>
         </AuthProvider>

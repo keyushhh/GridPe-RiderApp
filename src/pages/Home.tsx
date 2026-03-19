@@ -11,6 +11,7 @@ import OrderModal from "../components/OrderModal";
 import PickUpVerificationModal from "../components/PickUpVerificationModal";
 import FaceVerification from "../components/FaceVerification";
 import DeliveryOTPModal from "../components/DeliveryOTPModal";
+import NotificationBottomSheet from "../components/NotificationBottomSheet";
 import { useAuth } from "../hooks/useAuth";
 
 const Home = () => {
@@ -37,6 +38,7 @@ const Home = () => {
     const [verificationType, setVerificationType] = useState<'pickup' | 'delivery'>('pickup');
     const [isAtHub, setIsAtHub] = useState(false);
     const [isAtCustomer, setIsAtCustomer] = useState(false);
+    const [showNotificationSheet, setShowNotificationSheet] = useState(false);
 
     // Simulation: Reach hub after 5 seconds of active order
     useEffect(() => {
@@ -443,6 +445,13 @@ const Home = () => {
                                 onClick={() => {
                                     if (item.id === "earnings") {
                                         navigate("/earnings");
+                                    } else if (item.id === "notifications") {
+                                        const hasSeenPrompt = localStorage.getItem("has_seen_notification_prompt") === "true";
+                                        if (!hasSeenPrompt) {
+                                            setShowNotificationSheet(true);
+                                        } else {
+                                            navigate("/notifications");
+                                        }
                                     } else {
                                         setActiveTab(item.id);
                                     }
@@ -536,6 +545,27 @@ const Home = () => {
                         setShowPickUpModal(true);
                     }}
                     onClose={() => setShowFaceVerification(false)}
+                />
+            )}
+
+            {/* Notification Bottom Sheet */}
+            {showNotificationSheet && (
+                <NotificationBottomSheet 
+                    onClose={() => setShowNotificationSheet(false)}
+                    onEnable={() => {
+                        localStorage.setItem("has_seen_notification_prompt", "true");
+                        localStorage.setItem("push_notifications_enabled", "true");
+                        setShowNotificationSheet(false);
+                        navigate("/notifications");
+                        console.log("Push notifications enabled!");
+                    }}
+                    onDecline={() => {
+                        localStorage.setItem("has_seen_notification_prompt", "true");
+                        localStorage.setItem("push_notifications_enabled", "false");
+                        setShowNotificationSheet(false);
+                        navigate("/notifications");
+                        console.log("Push notifications declined.");
+                    }}
                 />
             )}
         </div>
