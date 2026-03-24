@@ -264,62 +264,37 @@ const Earnings = () => {
                     </div>
                 </div>
 
-                {/* Auto Payout Container: 16px below Overview */}
+                {/* Wallet Container: 16px below Overview */}
                 <div className="mt-[16px] w-[362px] rounded-[14px] bg-white border border-[#EDEDED] shadow-[0px_2px_8px_0px_rgba(0,0,0,0.04)] px-[12px] pt-[12px] pb-[18px] shrink-0 relative">
-                    {/* Check both setup and bank flags */}
-                    {(() => {
-                        const isSetup = localStorage.getItem("auto_payout_setup") === "true";
-                        const isBankAdded = localStorage.getItem("bank_details_added") === "true";
-                        
-                        return (
-                            <>
-                                <div className="flex justify-between items-start">
-                                    <h2 className="text-[16px] font-bold text-black leading-none" style={{ letterSpacing: "-0.43px" }}>
-                                        Auto Payout
-                                    </h2>
-                                    {isSetup && isBankAdded && (
-                                        <span 
-                                            className="text-[16px] font-bold text-black leading-none" 
-                                            style={{ letterSpacing: "-0.43px" }}
-                                        >
-                                            ₹{currentWeek.totalEarnings.toLocaleString()}
-                                        </span>
-                                    )}
-                                </div>
-                                
-                                {/* Body Text */}
-                                <p className="mt-[13px] text-[14px] font-medium text-black/50 leading-tight" style={{ letterSpacing: "-0.43px" }}>
-                                    {isSetup
-                                        ? isBankAdded
-                                            ? "Auto-Payout will be released on the 4th Saturday of this month."
-                                            : "You have not set up you bank details yet. Set it now so that you don’t miss payments directly in your bank account?"
-                                        : "You have not set up auto payout yet. Set it now so that you don’t miss payments directly in your bank account?"
-                                    }
-                                </p>
+                    <div className="flex justify-between items-start">
+                        <h2 className="text-[16px] font-bold text-black leading-none" style={{ letterSpacing: "-0.43px" }}>
+                            Wallet
+                        </h2>
+                        <span 
+                            className="absolute top-[14px] right-[14px] text-[16px] font-bold text-black leading-none" 
+                            style={{ letterSpacing: "-0.43px" }}
+                        >
+                            ₹{currentWeek.totalEarnings.toLocaleString()}
+                        </span>
+                    </div>
+                    
+                    {/* Body Text */}
+                    <p className="mt-[13px] text-[14px] font-medium text-black/50 leading-tight" style={{ letterSpacing: "-0.43px" }}>
+                        You wallet balance is shown here, you can start your payout procedure from here
+                    </p>
 
-                                {/* CTA Button */}
-                                <div className="mt-[18px] flex justify-center">
-                                    <button 
-                                        onClick={() => navigate(isSetup && !isBankAdded ? "/settings" : "/auto-payout")}
-                                        className={`w-[335px] h-[44px] rounded-full flex items-center justify-center text-[16px] font-medium transition-transform active:scale-95 ${
-                                            isSetup && !isBankAdded 
-                                                ? 'bg-[#5260FE] text-white' 
-                                                : 'bg-[#5260FE] text-white'
-                                        }`}
-                                        style={{ 
-                                            boxShadow: isSetup && !isBankAdded ? '0px_4px_12px_rgba(82,96,254,0.2)' : '0px_4px_12px_rgba(82,96,254,0.2)' 
-                                        }}
-                                    >
-                                        {isSetup 
-                                            ? isBankAdded 
-                                                ? "View Auto Payout" 
-                                                : "Add Bank Account" 
-                                            : "Setup Auto Payout"}
-                                    </button>
-                                </div>
-                            </>
-                        );
-                    })()}
+                    {/* CTA Button */}
+                    <div className="mt-[18px] flex justify-center">
+                        <button 
+                            onClick={() => navigate("/wallet", { state: { amount: currentWeek.totalEarnings } })}
+                            className="w-[335px] h-[44px] rounded-full flex items-center justify-center text-[16px] font-medium transition-transform active:scale-95 bg-[#5260FE] text-white"
+                            style={{ 
+                                boxShadow: '0px_4px_12px_rgba(82,96,254,0.2)' 
+                            }}
+                        >
+                            View Wallet
+                        </button>
+                    </div>
                 </div>
 
                 {/* Daily/Weekly Switch Tabs: 20px below Auto Payout */}

@@ -13,6 +13,8 @@ import FaceVerification from "../components/FaceVerification";
 import DeliveryOTPModal from "../components/DeliveryOTPModal";
 import NotificationBottomSheet from "../components/NotificationBottomSheet";
 import { useAuth } from "../hooks/useAuth";
+import TransactionDetailBottomSheet, { Transaction } from "../components/TransactionDetailBottomSheet";
+import { transactionService } from "../services/transactionService";
 
 const Home = () => {
     const navigate = useNavigate();
@@ -39,6 +41,22 @@ const Home = () => {
     const [isAtHub, setIsAtHub] = useState(false);
     const [isAtCustomer, setIsAtCustomer] = useState(false);
     const [showNotificationSheet, setShowNotificationSheet] = useState(false);
+    const [showTipBottomSheet, setShowTipBottomSheet] = useState(false);
+    const [newTipTransaction, setNewTipTransaction] = useState<Transaction | null>(null);
+
+    // Listen for new transactions (Tips)
+    useEffect(() => {
+        const handleNewTx = (e: any) => {
+            const tx = e.detail as Transaction;
+            if (tx.type === 'Earnings' && tx.title.toLowerCase().includes('tip')) {
+                setNewTipTransaction(tx);
+                setShowTipBottomSheet(true);
+            }
+        };
+
+        window.addEventListener('new-transaction', handleNewTx);
+        return () => window.removeEventListener('new-transaction', handleNewTx);
+    }, []);
 
     // Simulation: Reach hub after 5 seconds of active order
     useEffect(() => {
@@ -332,6 +350,24 @@ const Home = () => {
                             )}
                         </div>
 
+                        {/* Simulation Button: Receive Tip */}
+                        <div className="w-[362px] mt-4 flex justify-end px-1">
+                            <button 
+                                onClick={() => {
+                                    transactionService.addTransaction({
+                                        type: 'Earnings',
+                                        title: 'Delivery Tip Received',
+                                        detail: `Delivery for ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`,
+                                        amount: '₹50',
+                                        status: 'success'
+                                    });
+                                }}
+                                className="text-[12px] font-medium text-[#5260FE] opacity-40 hover:opacity-100 transition-opacity"
+                            >
+                                [Simulate Receive Tip]
+                            </button>
+                        </div>
+
                         {/* Referral Banner: 20px below container */}
                         <div className="w-[362px] h-[104px] rounded-[16px] bg-black mt-5 shrink-0 overflow-hidden flex relative">
                             {/* Left Content */}
@@ -568,6 +604,13 @@ const Home = () => {
                     }}
                 />
             )}
+
+            {/* Delivery Tip Bottom Sheet (Auto-show) */}
+            <TransactionDetailBottomSheet 
+                isOpen={showTipBottomSheet}
+                onClose={() => setShowTipBottomSheet(false)}
+                transaction={newTipTransaction}
+            />
         </div>
     );
 };

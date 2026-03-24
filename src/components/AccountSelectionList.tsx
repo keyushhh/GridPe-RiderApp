@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { getBankLogo, BANK_LOGO_MAP } from '../utils/BankLogoMap';
+import { getBankLogo, BANK_SLUG_MAP as BANK_LOGO_MAP } from '../utils/BankLogoMap';
 import searchIcon from '../assets/search.svg';
 import bankBuildingIcon from '../assets/bank.svg';
 import radioSelected from '../assets/radio-selected.svg';

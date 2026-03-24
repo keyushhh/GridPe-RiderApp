@@ -114,31 +114,24 @@ const EarningsDetail = () => {
                     </div>
                 </div>
 
-                {/* Auto Payout Section: 13px below first container */}
+                {/* Payout Activity Section: 13px below first container */}
                 <div className="mt-[13px] w-[362px] h-auto rounded-[14px] bg-white border border-[#EDEDED] flex flex-col items-start shrink-0 relative">
                     {/* Header: 12px from top/left */}
-                    {/* Amount: 7px from top, 12px from right */}
                     <div className="w-full flex justify-between items-start pt-[12px] px-[12px]">
                         <span
                             className="text-[16px] font-bold text-black"
                             style={{ letterSpacing: "-0.43px" }}
                         >
-                            Auto Payout
-                        </span>
-                        <span
-                            className="text-[24px] font-bold text-black mt-[-5px]"
-                            style={{ letterSpacing: "-0.43px" }}
-                        >
-                            ₹0
+                            Payout activity
                         </span>
                     </div>
 
-                    {/* Body: 13px below header */}
+                    {/* Body: 4px below header */}
                     <p
                         className="mt-[4px] px-[12px] text-[14px] font-medium text-black/50"
                         style={{ letterSpacing: "-0.43px" }}
                     >
-                        You have not set up auto payout yet.
+                        No payout occured in the last 2 weeks
                     </p>
 
                     {/* Bottom Padding: 16px below body */}

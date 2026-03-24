@@ -36,7 +36,7 @@ import qrCodeImg from "../assets/trial-qr.png";
 import PasskeyBottomSheet from "../components/PasskeyBottomSheet";
 
 // Helper component for swipe-to-delete
-const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo }: any) => {
+const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any) => {
     const [swipeX, setSwipeX] = useState(0);
     const [isDragging, setIsDragging] = useState(false);
     const startX = useRef(0);
@@ -117,7 +117,7 @@ const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo }: any) => {
                 <div className="mt-[8px] flex flex-col items-start">
                     <span className="text-black font-medium text-[14px]">Savings account</span>
                     <span className="mt-[4px] text-black font-medium text-[14px]">XXXX XXXX XXXX 0960</span>
-                    <span className="mt-[4px] text-black font-bold text-[14px]">Rohit Khandelwal</span>
+                    <span className="mt-[4px] text-black font-bold text-[14px]">{userName}</span>
                 </div>
             </div>
         </div>
@@ -1539,6 +1539,7 @@ const AccountSettings = () => {
                                                     index={index}
                                                     onDelete={handleDeleteAccount}
                                                     getBankLogo={getBankLogo}
+                                                    userName={riderName}
                                                 />
                                             ))}
                                         </div>
@@ -1752,7 +1753,7 @@ const AccountSettings = () => {
                                     <div className="mt-[8px] flex flex-col items-start">
                                         <span className="text-black font-medium text-[14px]">Savings account</span>
                                         <span className="mt-[4px] text-black font-medium text-[14px]">XXXX XXXX XXXX 0960</span>
-                                        <span className="mt-[4px] text-black font-bold text-[14px]">Rohit Khandelwal</span>
+                                        <span className="mt-[4px] text-black font-bold text-[14px]">{riderName}</span>
                                     </div>
                                 </div>
 

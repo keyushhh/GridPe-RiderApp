@@ -22,12 +22,16 @@ import AutoPayoutSuccess from './pages/AutoPayoutSuccess'
 import AccountSettings from './pages/AccountSettings'
 import EditEmail from './pages/EditEmail'
 import Notifications from './pages/Notifications'
+import Wallet from './pages/Wallet'
+import WithdrawSuccess from '@/pages/WithdrawSuccess'
+import TransactionHistory from '@/pages/TransactionHistory'
 
 function App() {
     return (
         <AuthProvider>
             <Router>
                 <Routes>
+                    <Route path="/history" element={<TransactionHistory />} />
                     <Route path="/" element={<Login />} />
                     <Route path="/login" element={<Login />} />
                     <Route path="/otp" element={<OTP />} />
@@ -51,6 +55,8 @@ function App() {
                     <Route path="/account-settings" element={<AccountSettings />} />
                     <Route path="/account-settings/email" element={<EditEmail />} />
                     <Route path="/notifications" element={<Notifications />} />
+                    <Route path="/wallet" element={<Wallet />} />
+                    <Route path="/withdraw-success" element={<WithdrawSuccess />} />
                 </Routes>
             </Router>
         </AuthProvider>
