@@ -144,7 +144,7 @@ const OnboardingKYCReview = () => {
                 {/* Step Container */}
                 <div className="w-[362px] h-[75px] rounded-[12px] bg-white border border-[#E9EAEB] relative shrink-0 mx-auto">
                     <span className="absolute left-[12px] top-[15px] text-[14px] font-medium text-black">
-                        Step 4/4
+                        Step 5/5
                     </span>
                     <span className="absolute right-[14px] top-[15px] text-[14px] font-medium text-black">
                         Review

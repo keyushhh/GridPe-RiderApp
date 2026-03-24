@@ -127,9 +127,8 @@ const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any)
 const AccountSettings = () => {
     const navigate = useNavigate();
     const location = useLocation();
-    const { phoneNumber, logout, kycStatus, fullName, email } = useAuth();
+    const { phoneNumber, logout, kycStatus, fullName, email, avatar, updateAvatar } = useAuth();
     const [activeTab, setActiveTab] = useState(location.state?.activeTab || "Home");
-    const [profileImage, setProfileImage] = useState(avatarImg);
     const [loginDevices, setLoginDevices] = useState<{ id: number, model: string, city: string, lastActive: string, app: string }[]>([]);
     const [kycDoc, setKycDoc] = useState({ type: 'aadhar', label: 'Aadhar Card', number: 'XXXX 4242' });
     const [bankingStep, setBankingStep] = useState<'list' | 'add_wifi' | 'validate_sim' | 'verifying_sim' | 'linked_accounts' | 'add_form' | 'success'>('list');
@@ -226,13 +225,19 @@ const AccountSettings = () => {
             // Check if file is jpg, jpeg, or png
             const allowedTypes = ["image/jpeg", "image/jpg", "image/png"];
             if (allowedTypes.includes(file.type)) {
-                const imageUrl = URL.createObjectURL(file);
-                setProfileImage(imageUrl);
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const base64String = reader.result as string;
+                    updateAvatar(base64String);
+                };
+                reader.readAsDataURL(file);
             } else {
                 alert("Only JPG, JPEG, and PNG formats are allowed.");
             }
         }
     };
+
+    const currentAvatar = avatar || avatarImg;
 
     const quickLinks = [
         { label: "Personal Info", icon: personalInfoIcon, tab: "Personal Info" },
@@ -440,7 +445,7 @@ const AccountSettings = () => {
                     <>
                         {/* Avatar: 18px below divider */}
                         <div className="mt-[18px] w-[83px] h-[83px] rounded-full border border-gray-100 overflow-hidden shrink-0">
-                            <img src={profileImage} alt="Avatar" className="w-full h-full object-cover" />
+                            <img src={currentAvatar} alt="Avatar" className="w-full h-full object-cover" />
                         </div>
 
                         {/* Name: 12px below avatar */}
@@ -564,7 +569,7 @@ const AccountSettings = () => {
                         {/* Avatar and Upload Row: 25px below header */}
                         <div className="mt-[25px] flex items-center w-full">
                             <div className="w-[83px] h-[83px] rounded-full border border-gray-100 overflow-hidden shrink-0">
-                                <img src={profileImage} alt="Avatar" className="w-full h-full object-cover" />
+                                <img src={currentAvatar} alt="Avatar" className="w-full h-full object-cover" />
                             </div>
 
                             <button

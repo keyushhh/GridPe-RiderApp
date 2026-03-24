@@ -6,8 +6,10 @@ interface AuthContextType {
     fullName: string | null;
     kycStatus: string | null;
     email: string | null;
+    avatar: string | null;
     setPhoneNumber: (phone: string | null) => void;
     updateEmail: (email: string | null) => void;
+    updateAvatar: (avatar: string | null) => void;
     login: (uuid: string, fullName?: string | null, kycStatus?: string | null) => void;
     logout: () => void;
     loading: boolean;
@@ -21,6 +23,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [fullName, setFullName] = useState<string | null>(localStorage.getItem('rider_kyc_name'));
     const [kycStatus, setKycStatus] = useState<string | null>(localStorage.getItem('rider_kyc_status'));
     const [email, setEmailState] = useState<string | null>(localStorage.getItem('rider_email'));
+    const [avatar, setAvatarState] = useState<string | null>(localStorage.getItem('rider_avatar'));
     const [loading, setLoading] = useState(true);
 
     const setPhoneNumber = (phone: string | null) => {
@@ -35,20 +38,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setEmailState(email);
     };
 
+    const updateAvatar = (avatar: string | null) => {
+        if (avatar) localStorage.setItem('rider_avatar', avatar);
+        else localStorage.removeItem('rider_avatar');
+        setAvatarState(avatar);
+    };
+
     useEffect(() => {
         const storedUuid = localStorage.getItem('rider_uuid');
         const storedPhone = localStorage.getItem('rider_phone');
         const storedName = localStorage.getItem('rider_kyc_name');
         const storedStatus = localStorage.getItem('rider_kyc_status');
         const storedEmail = localStorage.getItem('rider_email');
+        const storedAvatar = localStorage.getItem('rider_avatar');
         
-        console.log('AuthProvider init:', { storedUuid, storedPhone, storedName, storedStatus, storedEmail });
+        console.log('AuthProvider init:', { storedUuid, storedPhone, storedName, storedStatus, storedEmail, storedAvatar });
         
         if (storedUuid) setRiderUuid(storedUuid);
         if (storedPhone) setPhoneNumberState(storedPhone);
         if (storedName) setFullName(storedName);
         if (storedStatus) setKycStatus(storedStatus);
         if (storedEmail) setEmailState(storedEmail);
+        if (storedAvatar) setAvatarState(storedAvatar);
         
         setLoading(false);
     }, []);
@@ -102,6 +113,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('rider_has_been_online');
         localStorage.removeItem('rider_earnings');
         localStorage.removeItem('rider_email');
+        localStorage.removeItem('rider_avatar');
         
         // Reset all React state
         setRiderUuid(null);
@@ -109,12 +121,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setFullName(null);
         setKycStatus(null);
         setEmailState(null);
+        setAvatarState(null);
         
         console.log('User logged out, all state cleared.');
     };
 
     return (
-        <AuthContext.Provider value={{ riderUuid, phoneNumber, fullName, kycStatus, email, setPhoneNumber, updateEmail, login, logout, loading }}>
+        <AuthContext.Provider value={{ riderUuid, phoneNumber, fullName, kycStatus, email, avatar, setPhoneNumber, updateEmail, updateAvatar, login, logout, loading }}>
             {children}
         </AuthContext.Provider>
     );

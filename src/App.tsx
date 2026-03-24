@@ -11,6 +11,9 @@ import OnboardingKYCUpload from './pages/OnboardingKYCUpload'
 import OnboardingKYCSelfie from './pages/OnboardingKYCSelfie'
 import OnboardingKYCReview from './pages/OnboardingKYCReview'
 import OnboardingKYCSuccess from './pages/OnboardingKYCSuccess'
+import OnboardingStepTwo from './pages/OnboardingStepTwo'
+import FetchingVehicleDetails from './pages/FetchingVehicleDetails'
+import DetailsFetchedSuccess from './pages/DetailsFetchedSuccess'
 import IdentityVerificationInfo from './pages/IdentityVerificationInfo'
 import Home from './pages/Home'
 import OrderDelivered from './pages/OrderDelivered'
@@ -37,6 +40,9 @@ function App() {
                     <Route path="/otp" element={<OTP />} />
                     <Route path="/work-city" element={<WorkCity />} />
                     <Route path="/onboarding/vehicle" element={<OnboardingVehicle />} />
+                    <Route path="/onboarding/step-2-new" element={<OnboardingStepTwo />} />
+                    <Route path="/onboarding/fetching-details" element={<FetchingVehicleDetails />} />
+                    <Route path="/onboarding/details-success" element={<DetailsFetchedSuccess />} />
                     <Route path="/onboarding/step-2" element={<OnboardingHub />} />
                     <Route path="/onboarding/guidelines" element={<OnboardingGuidelines />} />
                     <Route path="/onboarding/kyc" element={<OnboardingKYC />} />
