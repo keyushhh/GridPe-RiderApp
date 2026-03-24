@@ -257,7 +257,7 @@ const TransactionDetailBottomSheet: React.FC<TransactionDetailBottomSheetProps> 
       <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={onClose} />
 
       <div
-        className={`relative bg-white w-[362px] rounded-[32px] mb-[21px] flex flex-col pt-[12px] px-[14px] pb-[14px] z-10 transition-transform duration-300`}
+        className={`relative bg-white w-[362px] rounded-[24px] mb-[21px] flex flex-col pt-[12px] px-[14px] pb-[14px] z-10 transition-transform duration-300`}
         onClick={(e) => e.stopPropagation()}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import avatarImg from "../assets/avatar.png";
+import safetyToolkitIcon from "../assets/safety-toolkit.svg";
+import menuIcon from "../assets/menu.jpg";
 import giftIcon from "../assets/gift.svg";
 import referralImg from "../assets/referral image.png";
 import homeIcon from "../assets/home.svg";
@@ -14,6 +15,10 @@ import DeliveryOTPModal from "../components/DeliveryOTPModal";
 import NotificationBottomSheet from "../components/NotificationBottomSheet";
 import { useAuth } from "../hooks/useAuth";
 import TransactionDetailBottomSheet, { Transaction } from "../components/TransactionDetailBottomSheet";
+import SafetyToolkitBottomSheet from "../components/SafetyToolkitBottomSheet";
+import EmergencyAssistanceBottomSheet from "../components/EmergencyAssistanceBottomSheet";
+import ShareTripBottomSheet from "../components/ShareTripBottomSheet";
+import HotlineBottomSheet from "../components/HotlineBottomSheet";
 import { transactionService } from "../services/transactionService";
 
 const Home = () => {
@@ -43,6 +48,39 @@ const Home = () => {
     const [showNotificationSheet, setShowNotificationSheet] = useState(false);
     const [showTipBottomSheet, setShowTipBottomSheet] = useState(false);
     const [newTipTransaction, setNewTipTransaction] = useState<Transaction | null>(null);
+    const [showSafetyToolkit, setShowSafetyToolkit] = useState(false);
+    const [showEmergencyAssistance, setShowEmergencyAssistance] = useState(false);
+    const [showShareTrip, setShowShareTrip] = useState(false);
+    const [showHotline, setShowHotline] = useState(false);
+    const [locationName, setLocationName] = useState("Detecting location...");
+
+    // Fetch live location
+    useEffect(() => {
+        if ("geolocation" in navigator) {
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const { latitude, longitude } = position.coords;
+                    try {
+                        const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`);
+                        const data = await res.json();
+                        const addr = data.locality || data.city || data.principalSubdivision || "Current Location";
+                        const street = data.street || data.neighborhood || "";
+                        const fullAddr = street ? `${street}, ${addr}` : addr;
+                        setLocationName(fullAddr);
+                    } catch (err) {
+                        console.error("Reverse geocoding failed:", err);
+                        setLocationName("Location found");
+                    }
+                },
+                (error) => {
+                    console.error("Error fetching location:", error);
+                    setLocationName("Location access denied");
+                }
+            );
+        } else {
+            setLocationName("Geolocation not supported");
+        }
+    }, []);
 
     // Listen for new transactions (Tips)
     useEffect(() => {
@@ -125,11 +163,19 @@ const Home = () => {
                 <h1 className="text-black text-[24px] font-bold leading-none">
                     Welcome, {riderName}!
                 </h1>
-                <div 
-                    className="w-[50px] h-[50px] rounded-full border border-gray-100 overflow-hidden shrink-0 cursor-pointer transition-transform active:scale-95"
-                    onClick={() => navigate('/account-settings')}
-                >
-                    <img src={avatarImg} alt="Avatar" className="w-full h-full object-cover" />
+                <div className="flex gap-2">
+                    <button 
+                        className="w-[34px] h-[34px] rounded-full bg-[#F5F5F5] flex items-center justify-center transition-transform active:scale-95"
+                        onClick={() => setShowSafetyToolkit(true)}
+                    >
+                        <img src={safetyToolkitIcon} alt="Safety Toolkit" className="w-full h-full" />
+                    </button>
+                    <button 
+                        className="w-[34px] h-[34px] rounded-full bg-[#F5F5F5] flex items-center justify-center transition-transform active:scale-95"
+                        onClick={() => navigate('/account-settings')}
+                    >
+                        <img src={menuIcon} alt="Menu" className="w-full h-full" />
+                    </button>
                 </div>
             </div>
 
@@ -610,6 +656,47 @@ const Home = () => {
                 isOpen={showTipBottomSheet}
                 onClose={() => setShowTipBottomSheet(false)}
                 transaction={newTipTransaction}
+            />
+
+            {/* Safety Toolkit Bottom Sheet */}
+            <SafetyToolkitBottomSheet 
+                isOpen={showSafetyToolkit}
+                onClose={() => setShowSafetyToolkit(false)}
+                onEmergencyClick={() => setShowEmergencyAssistance(true)}
+                onShareTripClick={() => setShowShareTrip(true)}
+                onHotlineClick={() => setShowHotline(true)}
+                locationName={locationName}
+            />
+
+            {/* Emergency Assistance Bottom Sheet */}
+            <EmergencyAssistanceBottomSheet 
+                isOpen={showEmergencyAssistance}
+                onBack={() => {
+                    setShowEmergencyAssistance(false);
+                    setShowSafetyToolkit(true);
+                }}
+                onClose={() => setShowEmergencyAssistance(false)}
+                locationName={locationName}
+            />
+
+            {/* Share My Trip Bottom Sheet */}
+            <ShareTripBottomSheet
+                isOpen={showShareTrip}
+                onBack={() => {
+                    setShowShareTrip(false);
+                    setShowSafetyToolkit(true);
+                }}
+                onClose={() => setShowShareTrip(false)}
+            />
+
+            {/* Safety Hotline Bottom Sheet */}
+            <HotlineBottomSheet
+                isOpen={showHotline}
+                onBack={() => {
+                    setShowHotline(false);
+                    setShowSafetyToolkit(true);
+                }}
+                onClose={() => setShowHotline(false)}
             />
         </div>
     );
