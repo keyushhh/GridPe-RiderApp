@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth';
 
 const Login: React.FC = () => {
     const [mobileNumber, setMobileNumber] = useState('');
+    const [referralCode, setReferralCode] = useState('');
     const navigate = useNavigate();
     const { setPhoneNumber } = useAuth();
 
@@ -19,6 +20,9 @@ const Login: React.FC = () => {
     const handleGetOtp = () => {
         if (mobileNumber.length === 10) {
             setPhoneNumber(mobileNumber);
+            if (referralCode.trim()) {
+                localStorage.setItem('rider_referral_code', referralCode.trim());
+            }
             navigate('/otp');
         }
     };
@@ -74,6 +78,17 @@ const Login: React.FC = () => {
                         onChange={(e) => setMobileNumber(e.target.value.replace(/[^0-9]/g, ''))}
                         className="flex-1 bg-transparent border-none outline-none text-[16px] font-medium text-black"
                         placeholder=""
+                    />
+                </div>
+
+                {/* Referral Code Field */}
+                <div className="mt-[8px] w-full max-w-[362px] h-[49px] flex items-center bg-[#F7F8FA] border border-[#E6E8EB] rounded-full px-[19px]">
+                    <input
+                        type="text"
+                        value={referralCode}
+                        onChange={(e) => setReferralCode(e.target.value.toUpperCase().replace(/\s/g, ''))}
+                        className="flex-1 bg-transparent border-none outline-none text-[14px] font-medium text-black placeholder:text-[#A0A3A8]"
+                        placeholder="Enter Referral Code (Optional)"
                     />
                 </div>
 
