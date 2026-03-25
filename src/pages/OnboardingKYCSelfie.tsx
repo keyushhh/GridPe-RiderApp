@@ -69,7 +69,7 @@ const OnboardingKYCSelfie = () => {
                     {/* Header */}
                     <div className="flex items-center justify-between w-full mb-[29px] shrink-0">
                         <button
-                            onClick={() => navigate(-1)}
+                            onClick={() => navigate(`/onboarding/kyc-upload?doc=${location.state?.documentType || 'aadhar'}`)}
                             className="w-10 h-10 rounded-full border border-[#E6E8EB] bg-white flex items-center justify-center transition-colors hover:bg-gray-50"
                         >
                             <ChevronLeft className="w-5 h-5 text-black" />

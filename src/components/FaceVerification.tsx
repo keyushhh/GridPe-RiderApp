@@ -4,22 +4,33 @@ import flashIcon from '../assets/camera-flash.svg';
 import frameIcon from '../assets/camera-frame.svg';
 
 interface FaceVerificationProps {
-  onCapture: (image: string) => void;
+  onCapture?: (image: string) => void;
+  onVideoCapture?: (videoUrl: string) => void;
   onClose: () => void;
+  mode?: 'photo' | 'video';
 }
 
-const FaceVerification: React.FC<FaceVerificationProps> = ({ onCapture, onClose }) => {
+const FaceVerification: React.FC<FaceVerificationProps> = ({ onCapture, onVideoCapture, onClose, mode = 'photo' }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<BlobPart[]>([]);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
 
   const startCamera = async () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user' },
+        audio: mode === 'video'
       });
       setStream(mediaStream);
-      if (videoRef.current) videoRef.current.srcObject = mediaStream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+        videoRef.current.muted = true; // Prevent feedback loop
+      }
     } catch (error) {
       console.error('Error accessing camera:', error);
       alert('Unable to access camera.');
@@ -34,8 +45,8 @@ const FaceVerification: React.FC<FaceVerificationProps> = ({ onCapture, onClose 
     }
   };
 
-  const handleCapture = () => {
-    if (videoRef.current && canvasRef.current) {
+  const handlePhotoCapture = () => {
+    if (videoRef.current && canvasRef.current && onCapture) {
       const canvas = canvasRef.current;
       const size = Math.min(videoRef.current.videoWidth, videoRef.current.videoHeight);
       canvas.width = size;
@@ -61,10 +72,62 @@ const FaceVerification: React.FC<FaceVerificationProps> = ({ onCapture, onClose 
     }
   };
 
+  const startRecording = () => {
+    if (!stream || !onVideoCapture) return;
+    
+    recordedChunksRef.current = [];
+    const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+    mediaRecorderRef.current = mediaRecorder;
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        recordedChunksRef.current.push(event.data);
+      }
+    };
+
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      onVideoCapture(url);
+    };
+
+    mediaRecorder.start();
+    setIsRecording(true);
+
+    recordingTimerRef.current = setTimeout(() => {
+      stopRecording();
+    }, 10000); // 10 seconds max
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingTimerRef.current) {
+        clearTimeout(recordingTimerRef.current);
+      }
+    }
+  };
+
+  const handleActionClick = () => {
+    if (mode === 'photo') {
+      handlePhotoCapture();
+    } else {
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    }
+  };
+
   useEffect(() => {
     startCamera();
-    return () => stopCamera();
-  }, []);
+    return () => {
+      stopCamera();
+      if (recordingTimerRef.current) clearTimeout(recordingTimerRef.current);
+    };
+  }, [mode]);
 
   return (
     <div className="fixed inset-0 z-[110] bg-black flex flex-col">
@@ -110,12 +173,16 @@ const FaceVerification: React.FC<FaceVerificationProps> = ({ onCapture, onClose 
       {/* Footer with Scan Now and Flash */}
       <div className="h-[140px] pb-10 flex items-center justify-center relative bg-black">
         <div className="relative flex items-center justify-center w-full">
-          {/* Scan Now Button: 170x44px, purple, pill-shaped */}
+          {/* Main Action Button */}
           <button
-            onClick={handleCapture}
-            className="w-[170px] h-[44px] bg-[#5260FE] rounded-full flex items-center justify-center transition-transform active:scale-95 z-20 shadow-[0px_4px_16px_rgba(82,96,254,0.4)]"
+            onClick={handleActionClick}
+            className={`w-[170px] h-[44px] rounded-full flex items-center justify-center transition-transform active:scale-95 z-20 shadow-[0px_4px_16px_rgba(82,96,254,0.4)] ${
+              isRecording ? 'bg-[#FF3B30] shadow-[0px_4px_16px_rgba(255,59,48,0.4)]' : 'bg-[#5260FE]'
+            }`}
           >
-            <span className="text-white font-satoshi font-normal text-[16px]">Scan Now</span>
+            <span className="text-white font-satoshi font-normal text-[16px]">
+              {mode === 'photo' ? 'Scan Now' : isRecording ? 'Stop' : 'Record Now'}
+            </span>
           </button>
 
           {/* Flash Button: 82px towards the right of the center */}

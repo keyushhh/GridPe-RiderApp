@@ -20,6 +20,8 @@ import EmergencyAssistanceBottomSheet from "../components/EmergencyAssistanceBot
 import ShareTripBottomSheet from "../components/ShareTripBottomSheet";
 import HotlineBottomSheet from "../components/HotlineBottomSheet";
 import { transactionService } from "../services/transactionService";
+import DeliveryFallbackPopups from "../components/DeliveryFallbackPopups";
+import { supabase } from "../lib/supabase";
 
 const Home = () => {
     const navigate = useNavigate();
@@ -40,6 +42,7 @@ const Home = () => {
     const [showPickUpModal, setShowPickUpModal] = useState(false);
     const [showOTPModal, setShowOTPModal] = useState(false);
     const [showFaceVerification, setShowFaceVerification] = useState(false);
+    const [faceVerificationMode, setFaceVerificationMode] = useState<'photo' | 'video'>('photo');
     const [isVerified, setIsVerified] = useState(false);
     const [orderStatus, setOrderStatus] = useState<'pickup_pending' | 'picked_up'>('pickup_pending');
     const [verificationType, setVerificationType] = useState<'pickup' | 'delivery'>('pickup');
@@ -53,6 +56,25 @@ const Home = () => {
     const [showShareTrip, setShowShareTrip] = useState(false);
     const [showHotline, setShowHotline] = useState(false);
     const [locationName, setLocationName] = useState("Detecting location...");
+    
+    // Fallback Flow State
+    const [isFallbackOpen, setIsFallbackOpen] = useState(false);
+    const [fallbackStatus, setFallbackStatus] = useState<'none' | 'mismatch' | 'waiting' | 'in_progress' | 'failure' | 'request_approval' | 'approved' | 'complete'>('none');
+    const [activeOrderId] = useState("CASH-789"); // Mock order ID
+    const [retryCount, setRetryCount] = useState(0);
+
+    // Timer-based Simulation for Fallback Flow (Frontend-only test)
+    useEffect(() => {
+        if (!isFallbackOpen || fallbackStatus !== 'waiting') return;
+
+        console.log("Starting approval simulation timer...");
+        const timer = setTimeout(() => {
+            setFallbackStatus('approved');
+            console.log("Simulation: Customer Approved!");
+        }, 3000); // 3 seconds wait
+
+        return () => clearTimeout(timer);
+    }, [isFallbackOpen, fallbackStatus]);
 
     // Fetch live location
     useEffect(() => {
@@ -126,7 +148,7 @@ const Home = () => {
         return () => clearTimeout(timer);
     }, [orderStatus]);
 
-    // Handle Order Completion from OrderDelivered page
+    // Handle Order Completion from OrderDelivered page and Camera Retakes
     useEffect(() => {
         const state = location.state as any;
         if (state?.orderCompleted) {
@@ -134,7 +156,19 @@ const Home = () => {
             // Refresh local earnings from storage
             setEarnings(Number(localStorage.getItem("rider_earnings")) || 0);
             // Clear location state to prevent repeat logic
-            window.history.replaceState({}, document.title);
+            window.history.replaceState({ ...state, orderCompleted: false }, document.title);
+        }
+
+        if (state?.openCameraVideo) {
+            setFaceVerificationMode('video');
+            setShowFaceVerification(true);
+            window.history.replaceState({ ...state, openCameraVideo: false }, document.title);
+        }
+
+        if (state?.videoSubmitted) {
+            setFallbackStatus('complete');
+            setIsFallbackOpen(true);
+            window.history.replaceState({ ...state, videoSubmitted: false }, document.title);
         }
     }, [location.state]);
 
@@ -593,9 +627,21 @@ const Home = () => {
                                 setOrderStatus('picked_up');
                                 console.log("Order Status changed to Picked Up!");
                             } else {
-                                setShowPickUpModal(false);
-                                setShowOTPModal(true);
-                                console.log("Delivery Verification: Face matched, opening OTP modal");
+                                // For Testing: Sometimes trigger failure for delivery
+                                const shouldFail = false; // Normal healthy flow
+                                
+                                if (shouldFail && verificationType === 'delivery') {
+                                    if (retryCount >= 1) {
+                                        setFallbackStatus('failure');
+                                    } else {
+                                        setFallbackStatus('mismatch');
+                                    }
+                                    setIsFallbackOpen(true);
+                                    console.log(`Simulating delivery verification failure (Try ${retryCount + 1})`);
+                                } else {
+                                    setShowOTPModal(true);
+                                    console.log("Delivery Verification: Face matched, opening OTP modal");
+                                }
                             }
                         } else {
                             setShowPickUpModal(false);
@@ -620,13 +666,24 @@ const Home = () => {
             {/* Face Verification Screen */}
             {showFaceVerification && (
                 <FaceVerification 
+                    mode={faceVerificationMode}
                     onCapture={(image) => {
                         console.log("Captured face:", image);
                         setIsVerified(true);
                         setShowFaceVerification(false);
                         setShowPickUpModal(true);
+                        setFaceVerificationMode('photo');
                     }}
-                    onClose={() => setShowFaceVerification(false)}
+                    onVideoCapture={(videoUrl) => {
+                        console.log("Captured video:", videoUrl);
+                        setShowFaceVerification(false);
+                        setFaceVerificationMode('photo');
+                        navigate('/video-verification', { state: { videoUrl } });
+                    }}
+                    onClose={() => {
+                        setShowFaceVerification(false);
+                        setFaceVerificationMode('photo');
+                    }}
                 />
             )}
 
@@ -697,6 +754,44 @@ const Home = () => {
                     setShowSafetyToolkit(true);
                 }}
                 onClose={() => setShowHotline(false)}
+            />
+            {/* Delivery Fallback Popups */}
+            <DeliveryFallbackPopups 
+                isOpen={isFallbackOpen}
+                onClose={() => setIsFallbackOpen(false)}
+                status={fallbackStatus}
+                onNotifyCustomer={async () => {
+                    setFallbackStatus('waiting');
+                    console.log("Notifying customer of identity mismatch...");
+                    // Next step: Implement real Supabase update here
+                }}
+                onRetry={() => {
+                    setIsFallbackOpen(false);
+                    setRetryCount(prev => prev + 1);
+                    setShowFaceVerification(true);
+                }}
+                onContactSupport={() => {
+                    console.log("Redirecting to support via call...");
+                    window.location.href = 'tel:+919876543210'; // Mock support number
+                }}
+                onOverrideRequest={() => {
+                    setFallbackStatus('request_approval');
+                }}
+                onRequestApproval={async () => {
+                    setFallbackStatus('waiting');
+                    console.log("Requesting customer approval (Simulated)...");
+                }}
+                onRecordVideo={() => {
+                    setIsFallbackOpen(false);
+                    setFaceVerificationMode('video');
+                    setShowFaceVerification(true);
+                    console.log("Starting selfie video recording...");
+                }}
+                onEnterVerificationCode={() => {
+                    setIsFallbackOpen(false);
+                    setShowOTPModal(true);
+                    console.log("Opening OTP modal for final delivery confirmation...");
+                }}
             />
         </div>
     );

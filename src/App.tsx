@@ -31,6 +31,7 @@ import TransactionHistory from '@/pages/TransactionHistory'
 import SupportRequests from './pages/SupportRequests'
 import HelpCategory from './pages/HelpCategory'
 import ZingChat from './pages/ZingChat'
+import VideoVerification from './pages/VideoVerification'
 
 import { ToastProvider } from './context/ToastContext'
 import GlobalCustomToaster from './components/GlobalCustomToaster'
@@ -74,6 +75,7 @@ function App() {
                         <Route path="/account-settings/support-requests" element={<SupportRequests />} />
                         <Route path="/help/category/:categoryId" element={<HelpCategory />} />
                         <Route path="/help/chat" element={<ZingChat />} />
+                        <Route path="/video-verification" element={<VideoVerification />} />
                     </Routes>
                     <GlobalCustomToaster />
                 </Router>

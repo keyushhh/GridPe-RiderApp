@@ -128,7 +128,7 @@ const OnboardingKYCReview = () => {
                 <div className="flex-none flex items-center justify-between px-5 pt-12 pb-2 relative z-10">
                     {/* Back Button */}
                     <button 
-                        onClick={() => navigate(-1)}
+                        onClick={() => navigate('/onboarding/kyc-selfie', { state: location.state })}
                         className="w-10 h-10 rounded-full border border-[#E6E8EB] bg-white flex items-center justify-center transition-colors hover:bg-gray-50"
                     >
                         <ChevronLeft className="w-5 h-5 text-black" />

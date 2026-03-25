@@ -40,7 +40,7 @@ const OnboardingKYC = () => {
 
                 <div className="w-full flex items-center justify-between">
                     <button
-                        onClick={() => navigate(-1)}
+                        onClick={() => navigate('/onboarding/guidelines')}
                         className="w-10 h-10 rounded-full border border-[#E6E8EB] bg-white flex items-center justify-center transition-colors hover:bg-gray-50"
                     >
                         <ChevronLeft className="w-5 h-5 text-black" />
