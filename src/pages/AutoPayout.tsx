@@ -99,7 +99,7 @@ const AutoPayout: React.FC = () => {
                 {/* Header Container */}
                 <div className="flex-none flex items-center w-[362px] px-0 pt-12 pb-2 relative z-10">
                     <button
-                        onClick={() => navigate(-1)}
+                        onClick={() => navigate('/wallet')}
                         className="w-[32px] h-[32px] rounded-full bg-white shadow-sm flex items-center justify-center transition-transform active:scale-90"
                     >
                         <img src={chevronBackward} alt="Back" className="w-[18px] h-[18px] brightness-0" />
@@ -294,7 +294,7 @@ const AutoPayout: React.FC = () => {
                 </button>
 
                 <button
-                    onClick={() => navigate(-1)}
+                    onClick={() => navigate('/wallet')}
                     className="w-[362px] h-[48px] rounded-full border border-black bg-white flex items-center justify-center text-[16px] font-medium text-black transition-all active:scale-[0.98] hover:bg-black/5"
                     style={{ letterSpacing: "-0.43px" }}
                 >

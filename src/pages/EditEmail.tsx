@@ -2,12 +2,14 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import chevronBackward from "../assets/chevron_backward.svg";
 import { useAuth } from "../hooks/useAuth";
+import { useToast } from "../context/ToastContext";
 
 type ViewState = "initial" | "otp";
 
 const EditEmail = () => {
     const navigate = useNavigate();
     const { email: savedEmail, updateEmail } = useAuth();
+    const { showToast } = useToast();
     
     // States
     const [viewState, setViewState] = useState<ViewState>("initial");
@@ -73,6 +75,7 @@ const EditEmail = () => {
         if (otpValue === "1234") {
             setError("");
             updateEmail(emailInput);
+            showToast("Email address updated successfully.", "success");
             navigate('/account-settings', { state: { activeTab: 'Personal Info' } });
         } else {
             setError("Invalid verification code. Please try 1234 for testing.");
@@ -106,7 +109,7 @@ const EditEmail = () => {
                 <button
                     onClick={() => {
                         if (viewState === "otp") setViewState("initial");
-                        else navigate(-1);
+                        else navigate('/account-settings', { state: { activeTab: 'Personal Info' } });
                     }}
                     className="w-[32px] h-[32px] rounded-full bg-white shadow-sm flex items-center justify-center transition-transform active:scale-90"
                 >

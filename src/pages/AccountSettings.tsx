@@ -1,39 +1,48 @@
+import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import authenticatorIcon from "../assets/authenticator.svg";
 import avatarImg from "../assets/avatar.png";
 import bankIcon from "../assets/bank.svg";
+import callFillIcon from "../assets/call-fill.svg";
+import chatIcon from "../assets/chat.svg";
 import chevronBackward from "../assets/chevron_backward.svg";
 import chevronForward from "../assets/chevron_forward.svg";
 import copyIcon from "../assets/copy.svg";
+import deleteIcon from "../assets/delete.svg";
+import errorIcon from "../assets/error.svg";
+import faceIdIcon from "../assets/face-id.svg";
+import faqIcon from "../assets/faq.svg";
+import fingerprintIcon from "../assets/fingerprint.svg";
+import generalIssuesIcon from "../assets/general-issues.svg";
+import helpCircleIcon from "../assets/help-circle.svg";
 import kycLockIcon from "../assets/kyc-lock.svg";
 import logoutIcon from "../assets/log-out.svg";
+import passcodeIcon from "../assets/passcode.svg";
 import personalInfoIcon from "../assets/personal-info.svg";
 import phoneIcon from "../assets/phone.svg";
 import privacyDataIcon from "../assets/privacy_data.svg";
+import radioNotSelected from "../assets/radio-not-selected.svg";
+import radioSelected from "../assets/radio-selected.svg";
+import safetyIcon from "../assets/safety.svg";
+import searchIcon from "../assets/search.svg";
 import securityIcon from "../assets/security.svg";
 import shareIcon from "../assets/share.svg";
-import verifiedBadge from "../assets/verified-badge.svg";
-import simCardIcon from "../assets/simcard.svg";
+import shieldIcon from "../assets/shield.svg";
 import airtelLogo from "../assets/sim-carriers/airtel.png";
 import jioLogo from "../assets/sim-carriers/jio.png";
-import viLogo from "../assets/sim-carriers/vodafone_idea.png";
-import bsnlLogo from "../assets/sim-carriers/bsnl.png";
-import mtnlLogo from "../assets/sim-carriers/mtnl.png";
-import radioSelected from "../assets/radio-selected.svg";
-import radioNotSelected from "../assets/radio-not-selected.svg";
-import successCheckIcon from "../assets/success-check.svg";
-import { useAuth } from "../hooks/useAuth";
-import AccountSelectionList from "../components/AccountSelectionList";
-import { getBankLogo } from "../utils/BankLogoMap";
-import deleteIcon from "../assets/delete.svg";
-import shieldIcon from "../assets/shield.svg";
+import simCardIcon from "../assets/simcard.svg";
 import smsIcon from "../assets/sms.svg";
-import authenticatorIcon from "../assets/authenticator.svg";
-import faceIdIcon from "../assets/face-id.svg";
-import fingerprintIcon from "../assets/fingerprint.svg";
-import passcodeIcon from "../assets/passcode.svg";
+import successCheckIcon from "../assets/success-check.svg";
 import qrCodeImg from "../assets/trial-qr.png";
+import verifiedBadge from "../assets/verified-badge.svg";
+import walletIcon from "../assets/wallet.svg";
+import AccountSelectionList from "../components/AccountSelectionList";
 import PasskeyBottomSheet from "../components/PasskeyBottomSheet";
+import SupportStatusBottomSheet, { SupportStatusStep } from "../components/SupportStatusBottomSheet";
+import { useAuth } from "../hooks/useAuth";
+import { useToast } from "../context/ToastContext";
+import { getBankLogo } from "../utils/BankLogoMap";
 
 // Helper component for swipe-to-delete
 const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any) => {
@@ -52,7 +61,7 @@ const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any)
         if (index === 0 || !isDragging) return;
         const currentX = e.touches[0].clientX;
         const deltaX = currentX - startX.current;
-        
+
         // Only allow left swipe
         if (deltaX < 0) {
             setSwipeX(Math.max(deltaX, maxSwipe));
@@ -77,7 +86,7 @@ const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any)
         <div className={`relative w-[362px] h-auto overflow-hidden rounded-[16px] border border-[#E9EAEB] bg-white`}>
             {/* Delete Background - Only on the right and only when swiped */}
             {index !== 0 && swipeX < 0 && (
-                <div 
+                <div
                     className="absolute inset-y-0 right-0 w-[80px] bg-[#FF3B30] flex items-center justify-center cursor-pointer z-0"
                     onClick={() => onDelete(acc.id)}
                 >
@@ -89,7 +98,7 @@ const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any)
             )}
 
             {/* Foreground Card Content */}
-            <div 
+            <div
                 className="w-full h-auto p-[16px] bg-white flex flex-col relative transition-transform duration-200 ease-out z-10"
                 style={{ transform: `translateX(${swipeX}px)` }}
                 onTouchStart={onTouchStart}
@@ -113,7 +122,7 @@ const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any)
                         </div>
                     )}
                 </div>
-                
+
                 <div className="mt-[8px] flex flex-col items-start">
                     <span className="text-black font-medium text-[14px]">Savings account</span>
                     <span className="mt-[4px] text-black font-medium text-[14px]">XXXX XXXX XXXX 0960</span>
@@ -128,6 +137,7 @@ const AccountSettings = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const { phoneNumber, logout, kycStatus, fullName, email, avatar, updateAvatar } = useAuth();
+    const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState(location.state?.activeTab || "Home");
     const [loginDevices, setLoginDevices] = useState<{ id: number, model: string, city: string, lastActive: string, app: string }[]>([]);
     const [kycDoc, setKycDoc] = useState({ type: 'aadhar', label: 'Aadhar Card', number: 'XXXX 4242' });
@@ -153,6 +163,9 @@ const AccountSettings = () => {
     const [backupCodes, setBackupCodes] = useState<string[]>(Array(8).fill("2150-7122"));
     const [fromDashboard, setFromDashboard] = useState(false);
     const [selectedMethod, setSelectedMethod] = useState<'sms' | 'auth'>('sms');
+    const [isDeletePopupOpen, setIsDeletePopupOpen] = useState(false);
+    const [isSuccessPopupOpen, setIsSuccessPopupOpen] = useState(false);
+    const [accountToDelete, setAccountToDelete] = useState<any>(null);
 
     // Persistence Logic
     useEffect(() => {
@@ -195,15 +208,39 @@ const AccountSettings = () => {
     const [simCards] = useState([
         { id: 1, label: 'SIM 1', carrier: 'Airtel', logo: airtelLogo },
         { id: 2, label: 'SIM 2 (eSIM)', carrier: 'Jio', logo: jioLogo }
-        // { id: 1, label: 'SIM 1', carrier: 'Vi', logo: viLogo },
-        // { id: 1, label: 'SIM 1', carrier: 'BSNL', logo: bsnlLogo },
-        // { id: 1, label: 'SIM 1', carrier: 'MTNL', logo: mtnlLogo }
     ]);
+    const [isSupportStatusOpen, setIsSupportStatusOpen] = useState(false);
+    const [selectedTicket, setSelectedTicket] = useState<{ id: string, title: string, amount?: string } | null>(null);
+    const [supportStatusSteps, setSupportStatusSteps] = useState<SupportStatusStep[]>([
+        { label: 'Help Requested', timestamp: '20 Mar, 2026 | 11:00 AM', status: 'completed' },
+        { label: 'Ticket Created', timestamp: '20 Mar, 2026 | 11:00 AM', status: 'completed' },
+        { label: 'Agent Assigned', timestamp: '20 Mar, 2026 | 11:15 AM', status: 'completed' },
+        {
+            label: 'Call Scheduled',
+            timestamp: '20 Mar, 2026 | 11:30 AM',
+            description: 'Your call is scheduled, our representative will reach out to you in your registered mobile number.',
+            status: 'completed'
+        },
+        { label: 'Call Completed', timestamp: '20 Mar, 2026 | 11:30 AM', status: 'completed' },
+        {
+            label: 'Upload Required Documents',
+            description: 'In progress',
+            buttonText: 'Upload Documents',
+            status: 'in_progress'
+        },
+        { label: 'Support Provided', description: 'Pending', status: 'pending' },
+    ]);
+    const [ongoingSupport, setOngoingSupport] = useState<{ id: string; title: string; amount: string; status: string } | null>({
+        id: "GRDPE-RDR-123",
+        title: "Auto Payout Failed",
+        amount: "₹24,000",
+        status: "In Progress"
+    });
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     console.log('AccountSettings render:', { kycStatus, fullName });
 
-    const menuItems = ["Home", "Personal Info", "Security", "Banking", "Privacy & Data"];
+    const menuItems = ["Home", "Personal Info", "Security", "Banking", "Privacy & Data", "Help & Support"];
 
     // Get actual data for the rider
     const riderName = fullName || "";
@@ -215,8 +252,51 @@ const AccountSettings = () => {
         // We could add a toast here if needed
     };
 
-    const handleUploadClick = () => {
+    const handleUploadButtonClick = () => {
         fileInputRef.current?.click();
+    };
+
+    const handleUploadComplete = () => {
+        // Step 1: Complete the upload step, mark Support Provided as in_progress
+        setSupportStatusSteps(prev => {
+            const next = [...prev];
+            const uploadStep = next.find(s => s.label === "Upload Required Documents");
+            if (uploadStep) {
+                uploadStep.status = 'completed';
+                uploadStep.description = undefined;
+                uploadStep.buttonText = undefined;
+                uploadStep.timestamp = "20 Mar, 2026 | 11:40 AM";
+            }
+            const supportStep = next.find(s => s.label === "Support Provided");
+            if (supportStep) {
+                supportStep.status = 'in_progress';
+                supportStep.description = 'In progress';
+            }
+            return next;
+        });
+
+        // Step 2: After a delay, simulate full ticket resolution
+        setTimeout(() => {
+            setSupportStatusSteps(prev => {
+                const next = [...prev];
+                const supportStep = next.find(s => s.label === "Support Provided");
+                if (supportStep) {
+                    supportStep.status = 'completed';
+                    supportStep.description = undefined;
+                    supportStep.timestamp = "20 Mar, 2026 | 11:45 AM";
+                }
+                if (!next.some(s => s.label === "Ticket Resolved")) {
+                    next.push({
+                        label: "Ticket Resolved",
+                        timestamp: "20 Mar, 2026 | 11:45 AM",
+                        status: "completed"
+                    });
+                }
+                return next;
+            });
+            // Mark ongoing support as resolved — removes from Help & Support page
+            setOngoingSupport(prev => prev ? { ...prev, status: "Resolved" } : null);
+        }, 3000);
     };
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -289,7 +369,7 @@ const AccountSettings = () => {
 
     useEffect(() => {
         if (activeTab !== "Privacy & Data") return;
-        
+
         const labels: Record<string, string> = {
             'aadhar': 'Aadhar Card',
             'pan': 'PAN Card',
@@ -299,11 +379,11 @@ const AccountSettings = () => {
 
         const docType = localStorage.getItem('rider_kyc_doc_type') || 'aadhar';
         const docNum = localStorage.getItem('rider_kyc_doc_number') || '4242';
-        
+
         const last4 = docNum.replace(/\s/g, "").slice(-4);
         const masked = docType === 'aadhar' ? `XXXX ${last4}` : `XXX${last4}`;
         const label = labels[docType] || "Aadhar Card";
-        
+
         setKycDoc({
             type: docType,
             label: label,
@@ -312,7 +392,19 @@ const AccountSettings = () => {
     }, [activeTab]);
 
     const handleDeleteAccount = (id: string) => {
-        setAddedAccounts(prev => prev.filter(acc => acc.id !== id));
+        const account = addedAccounts.find(acc => acc.id === id);
+        if (account) {
+            setAccountToDelete(account);
+            setIsDeletePopupOpen(true);
+        }
+    };
+
+    const confirmDelete = () => {
+        if (accountToDelete) {
+            setAddedAccounts(prev => prev.filter(acc => acc.id !== accountToDelete.id));
+            setIsDeletePopupOpen(false);
+            showToast("Bank account has been successfully removed.", "delete");
+        }
     };
 
     useEffect(() => {
@@ -398,10 +490,10 @@ const AccountSettings = () => {
                             } else if (bankingStep === "add_form") {
                                 setBankingStep("linked_accounts");
                             } else {
-                                navigate(-1);
+                                navigate('/dashboard');
                             }
                         } else {
-                            navigate(-1);
+                            navigate('/dashboard');
                         }
                     }}
                     className="w-[32px] h-[32px] rounded-full bg-white shadow-sm flex items-center justify-center transition-transform active:scale-90"
@@ -420,7 +512,7 @@ const AccountSettings = () => {
             <div className="mt-6 w-full overflow-x-auto no-scrollbar flex relative z-10 shrink-0">
                 <div className="flex min-w-full px-4 relative">
                     {/* Gray Divider Bar */}
-                    <div className="absolute bottom-0 left-0 w-[500px] h-[5px] bg-[#DFDFDF] z-0" />
+                    <div className="absolute bottom-0 left-0 w-[630px] h-[5px] bg-[#DFDFDF] z-0" />
 
                     {menuItems.map((item) => (
                         <button
@@ -480,7 +572,7 @@ const AccountSettings = () => {
                         </div>
 
                         {/* Quick Link Boxes: 27px below rider id */}
-                        <div className="mt-[27px] w-full flex gap-[13px] justify-center">
+                        <div className="mt-[27px] w-full flex flex-wrap gap-[13px] justify-center">
                             {quickLinks.map((link) => (
                                 <button
                                     key={link.label}
@@ -573,8 +665,8 @@ const AccountSettings = () => {
                             </div>
 
                             <button
-                                onClick={handleUploadClick}
-                                className="ml-[170px] w-[109px] h-[32px] rounded-full bg-black text-white text-[12px] font-medium flex items-center justify-center transition-transform active:scale-95"
+                                className="mt-[18px] w-full h-[40px] rounded-full border border-[#E9EAEB] flex items-center justify-center transition-colors active:bg-[#F7F8FA]"
+                                onClick={handleUploadButtonClick}
                             >
                                 Upload Photo
                             </button>
@@ -664,7 +756,7 @@ const AccountSettings = () => {
                                 {/* Security Options: 19px below heading */}
                                 <div className="mt-[19px] w-full flex flex-col gap-[22px]">
                                     {/* Passkeys */}
-                                    <div 
+                                    <div
                                         className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
                                         onClick={() => setSecurityStep("passkeys")}
                                     >
@@ -678,7 +770,7 @@ const AccountSettings = () => {
                                     </div>
 
                                     {/* Authenticator App */}
-                                    <div 
+                                    <div
                                         className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
                                         onClick={() => {
                                             if (!isAuthenticatorActive) {
@@ -695,7 +787,7 @@ const AccountSettings = () => {
                                             )}
                                         </div>
                                         {isAuthenticatorActive ? (
-                                            <button 
+                                            <button
                                                 className="h-[24px] px-[12px] bg-[#FFF0F0] rounded-full flex items-center justify-center transition-transform active:scale-95"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -710,7 +802,7 @@ const AccountSettings = () => {
                                     </div>
 
                                     {/* 2-step verification */}
-                                    <div 
+                                    <div
                                         className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
                                         onClick={() => setSecurityStep("two_step_intro")}
                                     >
@@ -818,13 +910,13 @@ const AccountSettings = () => {
 
                                 {/* Buttons at bottom */}
                                 <div className="mt-auto pb-[32px] flex flex-col gap-[12px] w-full">
-                                    <button 
+                                    <button
                                         className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
                                         onClick={() => setShowPasskeySheet(true)}
                                     >
                                         Create passkey
                                     </button>
-                                    <button 
+                                    <button
                                         className="w-full h-[48px] rounded-full border border-black bg-white text-black font-medium text-[16px] transition-transform active:scale-[0.98]"
                                         onClick={() => setSecurityStep("list")}
                                     >
@@ -845,12 +937,12 @@ const AccountSettings = () => {
                                 {/* QR Code Section */}
                                 <div className="mt-[32px] flex flex-col items-center">
                                     <img src={qrCodeImg} alt="QR Code" className="w-[150px] h-[150px]" />
-                                    
+
                                     <span className="mt-[32px] text-black font-bold text-[18px] text-center max-w-[300px] leading-tight break-all">
                                         6EJN-7ZBA-VO63-X6BE-42DI-ZBT2-BKPR-3YR7
                                     </span>
-                                    
-                                    <button 
+
+                                    <button
                                         className="mt-[20px] h-[34px] px-[20px] bg-[#E9EAEB] rounded-full text-black font-medium text-[14px] flex items-center justify-center transition-transform active:scale-95"
                                         onClick={() => {
                                             navigator.clipboard.writeText("6EJN-7ZBA-VO63-X6BE-42DI-ZBT2-BKPR-3YR7");
@@ -884,7 +976,7 @@ const AccountSettings = () => {
 
                                 {/* Next Button */}
                                 <div className="mt-auto pb-[32px] w-full">
-                                    <button 
+                                    <button
                                         className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
                                         onClick={() => setSecurityStep("authenticator_otp")}
                                     >
@@ -938,7 +1030,7 @@ const AccountSettings = () => {
 
                                 {/* Next Button */}
                                 <div className="mt-auto pb-[32px] w-full">
-                                    <button 
+                                    <button
                                         className={`w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98] ${authenticatorOtp.join('').length === 6 ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}
                                         onClick={() => {
                                             if (authenticatorOtp.join('') === "123456") {
@@ -982,7 +1074,7 @@ const AccountSettings = () => {
 
                                 {/* Buttons at bottom */}
                                 <div className="mt-auto pb-[32px] flex flex-col gap-[12px] w-full">
-                                    <button 
+                                    <button
                                         className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
                                         onClick={() => {
                                             if (email) {
@@ -994,7 +1086,7 @@ const AccountSettings = () => {
                                     >
                                         Get Started
                                     </button>
-                                    <button 
+                                    <button
                                         className="w-full h-[48px] rounded-full border border-black bg-white text-black font-medium text-[16px] transition-transform active:scale-[0.98]"
                                         onClick={() => setSecurityStep("list")}
                                     >
@@ -1019,7 +1111,7 @@ const AccountSettings = () => {
                                 {/* Input Section */}
                                 <div className="mt-[24px] flex flex-col gap-[8px]">
                                     <div className="w-full h-[48px] px-[16px] bg-[#F7F8FA] border border-[#E6E8EB] rounded-full flex items-center">
-                                        <input 
+                                        <input
                                             type="email"
                                             placeholder="Enter your email ID"
                                             value={tempEmail}
@@ -1043,7 +1135,7 @@ const AccountSettings = () => {
 
                                 {/* Update Button */}
                                 <div className="mt-auto pb-[32px] w-full">
-                                    <button 
+                                    <button
                                         className={`w-full h-[48px] rounded-full font-medium text-[16px] transition-transform active:scale-[0.98] ${tempEmail ? 'bg-[#5260FE] text-white opacity-100' : 'bg-[#E0E2FF] text-white opacity-100 cursor-not-allowed'}`}
                                         disabled={!tempEmail}
                                         onClick={() => {
@@ -1119,7 +1211,7 @@ const AccountSettings = () => {
 
                                 {/* Next Button */}
                                 <div className="mt-auto pb-[32px] w-full">
-                                    <button 
+                                    <button
                                         className={`w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98] ${twoStepOtp.join('').length === 6 ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}
                                         onClick={() => {
                                             if (twoStepOtp.join('') === "123456") {
@@ -1151,7 +1243,7 @@ const AccountSettings = () => {
                                 {/* Options List */}
                                 <div className="mt-[25px] flex flex-col gap-[16px]">
                                     {/* Text message (SMS) */}
-                                    <div 
+                                    <div
                                         className="flex items-center justify-between cursor-pointer active:bg-gray-50 transition-colors"
                                         onClick={() => {
                                             setSecurityStep("two_step_phone");
@@ -1169,7 +1261,7 @@ const AccountSettings = () => {
                                     </div>
 
                                     {/* Authenticator app */}
-                                    <div 
+                                    <div
                                         className="flex items-center justify-between cursor-pointer active:bg-gray-50 transition-colors"
                                         onClick={() => {
                                             setSecurityStep("authenticator");
@@ -1207,7 +1299,7 @@ const AccountSettings = () => {
                                         <div className="flex items-center gap-[12px] pr-[12px] border-r border-[#E6E8EB]">
                                             <span className="text-black/50 font-medium text-[16px]">+91</span>
                                         </div>
-                                        <input 
+                                        <input
                                             type="tel"
                                             placeholder="9876543210"
                                             value={tempPhone}
@@ -1225,7 +1317,7 @@ const AccountSettings = () => {
 
                                 {/* Continue Button */}
                                 <div className="mt-auto pb-[32px] w-full">
-                                    <button 
+                                    <button
                                         className={`w-full h-[48px] rounded-full font-medium text-[16px] transition-transform active:scale-[0.98] ${tempPhone.length === 10 ? 'bg-[#5260FE] text-white' : 'bg-[#E0E2FF] text-white cursor-not-allowed'}`}
                                         disabled={tempPhone.length !== 10}
                                         onClick={() => setSecurityStep("two_step_phone_otp")}
@@ -1288,7 +1380,7 @@ const AccountSettings = () => {
 
                                 {/* Next Button */}
                                 <div className="mt-auto pb-[32px] w-full">
-                                    <button 
+                                    <button
                                         className={`w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98] ${phoneOtp.join('').length === 6 ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}
                                         onClick={() => {
                                             if (phoneOtp.join('') === "123456") {
@@ -1329,14 +1421,14 @@ const AccountSettings = () => {
                                 {/* Buttons at bottom */}
                                 <div className="mt-auto pb-[32px] flex flex-col gap-[12px] w-full">
                                     {!fromDashboard && (
-                                        <button 
+                                        <button
                                             className="w-full h-[48px] rounded-full bg-[#5260FE] text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
                                             onClick={() => setSecurityStep("two_step_dashboard")}
                                         >
                                             Save
                                         </button>
                                     )}
-                                    <button 
+                                    <button
                                         className={`w-full h-[48px] rounded-full border border-[#5260FE] bg-white text-[#5260FE] font-medium text-[16px] transition-transform active:scale-[0.98] ${fromDashboard ? 'mt-auto' : ''}`}
                                         onClick={generateNewCodes}
                                     >
@@ -1362,7 +1454,7 @@ const AccountSettings = () => {
                                 {/* Toggle Row */}
                                 <div className="mt-[32px] w-[362px] h-[50px] px-[13px] bg-transparent border border-[#E6E8EB] rounded-full flex items-center justify-between">
                                     <span className="text-black font-bold text-[16px]">2-step verification</span>
-                                    <div 
+                                    <div
                                         className={`w-[50px] h-[24px] rounded-full relative cursor-pointer transition-colors duration-200 ${isTwoStepEnabled ? 'bg-[#4CD964]' : 'bg-[#E9E9EB]'}`}
                                         onClick={() => setIsTwoStepEnabled(!isTwoStepEnabled)}
                                     >
@@ -1373,7 +1465,7 @@ const AccountSettings = () => {
                                 {/* Method Selection: Side-by-side */}
                                 <div className="mt-[25px] flex gap-[9px] w-[393px] -ml-[15.5px] pl-[35px] items-center">
                                     {/* Text Message Container */}
-                                    <div 
+                                    <div
                                         className={`w-[162px] h-[82px] p-[12px] bg-white border ${selectedMethod === 'sms' ? 'border-[#5260FE]' : 'border-[#E6E8EB]'} rounded-[12px] flex flex-col justify-between relative cursor-pointer`}
                                         onClick={() => {
                                             setSelectedMethod('sms');
@@ -1387,7 +1479,7 @@ const AccountSettings = () => {
                                     </div>
 
                                     {/* Authenticator App Container */}
-                                    <div 
+                                    <div
                                         className={`w-[162px] h-[82px] p-[12px] bg-white border ${selectedMethod === 'auth' ? 'border-[#5260FE]' : 'border-[#E6E8EB]'} rounded-[12px] flex flex-col justify-between relative cursor-pointer`}
                                         onClick={() => {
                                             if (isAuthenticatorActive) {
@@ -1406,7 +1498,7 @@ const AccountSettings = () => {
                                 </div>
 
                                 {/* Backup Codes Row */}
-                                <div 
+                                <div
                                     className="mt-[35px] flex items-center justify-between cursor-pointer active:bg-gray-50 transition-colors"
                                     onClick={() => {
                                         setFromDashboard(true);
@@ -1500,6 +1592,141 @@ const AccountSettings = () => {
                     </div>
                 )}
 
+                {activeTab === "Help & Support" && (
+                    <div className="w-full flex-1 flex flex-col items-start px-0 overflow-y-auto no-scrollbar pb-10">
+                        {/* Header: Icon + Title */}
+                        <div className="mt-[19px] flex items-center shrink-0">
+                            <img src={helpCircleIcon} alt="Help" className="w-[24px] h-[24px]" />
+                            <h2 className="ml-[12px] text-black font-bold text-[22px] leading-tight text-left font-satoshi">
+                                Help & Support
+                            </h2>
+                        </div>
+
+                        {/* Service Text */}
+                        <div className="mt-[24px] flex flex-col items-start font-satoshi">
+                            <h3 className="text-black font-bold text-[16px] leading-tight">How can we help?</h3>
+                            <p className="mt-[4px] text-black font-normal text-[14px]">We are happy to help you anytime</p>
+                        </div>
+
+                        {/* Search Bar */}
+                        <div className="mt-[18px] w-full h-[44px] px-[16px] rounded-full border border-[#E6E8EB] flex items-center gap-[12px] bg-white ring-offset-0 transition-colors">
+                            <img src={searchIcon} alt="Search" className="w-[18px] h-[18px]" />
+                            <input
+                                type="text"
+                                placeholder="Example: “Change primary bank”"
+                                className="flex-1 bg-transparent border-none outline-none text-black font-normal text-[14px] placeholder:text-black/70 font-satoshi"
+                            />
+                        </div>
+
+                        {/* Ongoing Help & Support Requests */}
+                        {(() => {
+                            const hasOngoingHelp = ongoingSupport && ongoingSupport.status !== 'Resolved';
+
+                            return (
+                                <div className="w-full flex flex-col items-start translate-y-[-2px]">
+                                    {hasOngoingHelp && (
+                                        <div className="mt-[18px] w-full flex flex-col items-start">
+                                            <span className="text-black/60 font-medium text-[14px] uppercase font-satoshi">Ongoing Help</span>
+                                            <div className="flex flex-col gap-[12px] w-full mt-[12px]">
+                                                {/* Ongoing Ticket Card */}
+                                                <div
+                                                    onClick={() => {
+                                                        setSelectedTicket({
+                                                            id: ongoingSupport.id,
+                                                            title: ongoingSupport.title,
+                                                            amount: ongoingSupport.amount
+                                                        });
+                                                        setIsSupportStatusOpen(true);
+                                                    }}
+                                                    className="w-[362px] h-[72px] px-[14px] rounded-[13px] border border-[#E9EAEB] bg-white flex items-center justify-between relative transition-all duration-300 cursor-pointer active:scale-[0.98] animate-in fade-in slide-in-from-top-2 duration-500"
+                                                >
+                                                    <div className="flex items-center gap-[12px]">
+                                                        <img src={errorIcon} alt="Status" className="w-[24px] h-[24px]" />
+                                                        <div className="flex flex-col items-start text-left">
+                                                            <span className="text-black font-medium text-[16px] font-satoshi">{ongoingSupport.title}</span>
+                                                            <span className="mt-[6px] text-black/60 font-medium text-[12px] font-satoshi">Ticket ID: {ongoingSupport.id}</span>
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-black font-medium text-[16px] font-satoshi">{ongoingSupport.amount}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* My Support Requests */}
+                                    <div
+                                        onClick={() => navigate('/account-settings/support-requests')}
+                                        className={`${hasOngoingHelp ? "mt-[12px]" : "mt-[18px]"} w-[362px] h-[44px] px-[20px] rounded-[12px] border border-[#E9EAEB] flex items-center justify-between bg-white cursor-pointer active:bg-[#F7F8FA] transition-all`}
+                                    >
+                                        <span className="text-black font-medium text-[14px] font-satoshi">My Support Requests</span>
+                                        <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] opacity-70" />
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        {/* BROWSE CATEGORIES */}
+                        <div className="mt-[18px] w-full flex flex-col items-start">
+                            <span className="text-black/60 font-medium text-[14px] uppercase font-satoshi">Browse Categories</span>
+                            <div className="mt-[12px] w-[362px] flex flex-col rounded-[12px] border border-[#E9EAEB] bg-white overflow-hidden">
+                                {[
+                                    { label: "General Issues", icon: generalIssuesIcon, route: "/help/category/general-issues" },
+                                    { label: "FAQs", icon: faqIcon, route: "/help/category/faqs" },
+                                    { label: "Grid.Pe Wallet FAQs", icon: walletIcon, route: "/help/category/wallet-faqs" },
+                                    { label: "Safety Toolkit", icon: safetyIcon, route: "/help/category/safety" }
+                                ].map((item, index, array) => (
+                                    <button
+                                        key={item.label}
+                                        onClick={() => navigate(item.route)}
+                                        className={`w-full h-[44px] pl-3 pr-[14px] py-[10px] flex items-center justify-between cursor-pointer active:bg-[#F7F8FA] transition-colors ${index !== array.length - 1 ? 'border-b border-[#E9EAEB]' : ''}`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <img src={item.icon} alt="" className="w-[18px] h-[18px]" />
+                                            <span className="text-black font-medium text-[14px] font-satoshi">{item.label}</span>
+                                        </div>
+                                        <img src={chevronForward} alt="Go" className="w-[20px] h-[20px] [filter:invert(53%)_sepia(0%)_saturate(0%)_hue-rotate(174deg)_brightness(94%)_contrast(88%)]" style={{ filter: 'grayscale(100%) opacity(0.5)' }} />
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* CONTACT US */}
+                        <div className="mt-[18px] w-full flex flex-col items-start px-0 pb-6">
+                            <span className="text-black/60 font-medium text-[14px] uppercase font-satoshi mb-[12px]">Contact Us</span>
+
+                            {/* Chat Button */}
+                            <div
+                                onClick={() => navigate('/help/chat')}
+                                className="w-[362px] h-[72px] px-[14px] rounded-[13px] border border-[#E9EAEB] bg-white flex items-center cursor-pointer active:bg-[#F7F8FA] transition-all relative"
+                            >
+                                <img src={chatIcon} alt="Chat" className="w-[18px] h-[18px] absolute top-[12px] left-[12px]" />
+                                <div className="flex flex-col items-start pl-[36px]">
+                                    <span className="text-black font-medium text-[14px] font-satoshi">Chat with us</span>
+                                    <p className="mt-[2px] text-[#7E7E7E] font-medium text-[12px] font-satoshi leading-snug">
+                                        Zing is here to help! Chat with Zing to clear your doubts.
+                                    </p>
+                                </div>
+                                <img src={chevronForward} alt="Go" className="w-[20px] h-[20px] absolute top-[12px] right-[14px] [filter:invert(53%)_sepia(0%)_saturate(0%)_hue-rotate(174deg)_brightness(94%)_contrast(88%)]" />
+                            </div>
+
+                            {/* Call Button - Black Fill */}
+                            <div
+                                onClick={() => window.location.href = 'tel:+9118001234567'}
+                                className="mt-[12px] w-[362px] h-[72px] px-[14px] rounded-[13px] bg-black flex items-center cursor-pointer active:opacity-90 transition-all relative"
+                            >
+                                <img src={callFillIcon} alt="Call" className="w-[18px] h-[18px] absolute top-[12px] left-[12px] brightness-0 invert" />
+                                <div className="flex flex-col items-start pl-[36px]">
+                                    <span className="text-white font-medium text-[14px] font-satoshi">Call us</span>
+                                    <p className="mt-[2px] text-white/70 font-medium text-[12px] font-satoshi leading-snug">
+                                        Call us for URGENT delivery related issues.
+                                    </p>
+                                </div>
+                                <img src={chevronForward} alt="Go" className="w-[20px] h-[20px] absolute top-[12px] right-[14px] brightness-0 invert" />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {activeTab === "Banking" && (
                     <div className="w-full flex-1 flex flex-col items-start px-0">
                         {bankingStep === "list" ? (
@@ -1515,7 +1742,7 @@ const AccountSettings = () => {
 
                                 {/* Description: 18px below */}
                                 <p className="mt-[18px] text-black font-medium text-[14px] leading-tight text-left shrink-0">
-                                    {addedAccounts.length > 0 
+                                    {addedAccounts.length > 0
                                         ? "Manage your bank accounts here. Your primary account will be used for all payouts. Primary bank accounts cannot be deleted, as it is required for your Payout."
                                         : "You don't have any bank accounts added yet. Please add a bank account, this is the account where you will receive your payouts. So make sure all the details entered are correct."
                                     }
@@ -1538,7 +1765,7 @@ const AccountSettings = () => {
                                         {/* Bank Account Cards List: 12px below heading */}
                                         <div className="mt-[12px] w-full flex flex-col gap-[12px] shrink-0">
                                             {addedAccounts.map((acc, index) => (
-                                                <SwipeableBankCard 
+                                                <SwipeableBankCard
                                                     key={acc.id}
                                                     acc={acc}
                                                     index={index}
@@ -1555,7 +1782,7 @@ const AccountSettings = () => {
                                 <div className="flex-1 min-h-[40px]" />
 
                                 {/* Add Bank Account CTA */}
-                                <button 
+                                <button
                                     onClick={handleConnectBank}
                                     className="w-[362px] h-[48px] bg-black text-white rounded-full font-medium text-[16px] flex items-center justify-center cursor-pointer active:scale-[0.98] transition-transform mb-8 self-center"
                                 >
@@ -1573,8 +1800,8 @@ const AccountSettings = () => {
                                         <p className="text-[#333333] font-medium text-[14px] leading-tight text-center w-[300px]">
                                             We need to verify this device with your phone number. Please turn off your 'WiFi' and stay connected through mobile data.
                                         </p>
-                                        <button 
-                                            onClick={() => setBankingStep("validate_sim")} 
+                                        <button
+                                            onClick={() => setBankingStep("validate_sim")}
                                             className="w-[322px] h-[48px] bg-black text-white rounded-full font-medium text-[16px] flex items-center justify-center cursor-pointer active:scale-[0.98] transition-transform"
                                         >
                                             Turn off WiFi
@@ -1599,7 +1826,7 @@ const AccountSettings = () => {
                                     </p>
                                     <div className="mt-[20px] flex gap-[9px] w-full">
                                         {simCards.map((sim) => (
-                                            <button 
+                                            <button
                                                 key={sim.id}
                                                 onClick={() => setSelectedSim(sim.id)}
                                                 className={`flex-1 h-[104px] rounded-[16px] border flex flex-col p-[12px] relative transition-all text-left
@@ -1610,9 +1837,9 @@ const AccountSettings = () => {
                                                 <span className="font-bold text-[15px] text-black pt-1">{sim.label}</span>
                                                 <span className="font-medium text-[14px] text-[#A0A0A0]">{sim.carrier}</span>
                                                 <div className="absolute top-[12px] right-[12px]">
-                                                    <img 
-                                                        src={selectedSim === sim.id ? radioSelected : radioNotSelected} 
-                                                        className="w-[20px] h-[20px]" 
+                                                    <img
+                                                        src={selectedSim === sim.id ? radioSelected : radioNotSelected}
+                                                        className="w-[20px] h-[20px]"
                                                     />
                                                 </div>
                                             </button>
@@ -1631,7 +1858,7 @@ const AccountSettings = () => {
                                     </div>
                                 </div>
                                 <div className="flex-1 min-h-[40px]" />
-                                <button 
+                                <button
                                     onClick={() => setBankingStep("verifying_sim")}
                                     className="w-[362px] h-[48px] bg-black text-white rounded-full font-medium text-[16px] flex items-center justify-center cursor-pointer active:scale-[0.98] transition-transform mb-8 self-center"
                                 >
@@ -1704,7 +1931,7 @@ const AccountSettings = () => {
                                 )}
                             </>
                         ) : bankingStep === "linked_accounts" ? (
-                            <AccountSelectionList 
+                            <AccountSelectionList
                                 phoneNumber={riderMobile || "+91 8787311620"}
                                 addedBankNames={addedAccounts.map(a => a.bankName)}
                                 onSelect={(acc) => {
@@ -1714,6 +1941,7 @@ const AccountSettings = () => {
                                     // Normally this would fetch details, but for now we just add it
                                     setAddedAccounts(prev => [...prev, acc]);
                                     setSuccessfullyLinkedBank(acc.bankName);
+                                    showToast(`${acc.bankName} has been successfully added.`, "success");
                                     setBankingStep("success");
                                 }}
                             />
@@ -1723,7 +1951,7 @@ const AccountSettings = () => {
                                 <h2 className="mt-[19px] text-black font-bold text-[22px] leading-tight text-left shrink-0">
                                     Bank Accounts
                                 </h2>
-                                
+
                                 <div className="flex items-start gap-[12px] mt-[18px]">
                                     <img src={bankIcon} className="w-[24px] h-[24px]" alt="Bank" />
                                     <h3 className="text-black font-bold text-[18px] leading-[1.2]">
@@ -1736,10 +1964,10 @@ const AccountSettings = () => {
                                     <div className="flex items-center gap-[12px]">
                                         <div className="w-[36px] h-[36px] flex items-center justify-center">
                                             {successfullyLinkedBank && getBankLogo(successfullyLinkedBank) ? (
-                                                <img 
-                                                    src={getBankLogo(successfullyLinkedBank) || undefined} 
-                                                    alt="" 
-                                                    className="w-full h-full object-contain" 
+                                                <img
+                                                    src={getBankLogo(successfullyLinkedBank) || undefined}
+                                                    alt=""
+                                                    className="w-full h-full object-contain"
                                                 />
                                             ) : (
                                                 <div className="w-full h-full rounded-full bg-[#5260FE] flex items-center justify-center text-white font-bold text-[16px]">
@@ -1754,7 +1982,7 @@ const AccountSettings = () => {
                                             </div>
                                         )}
                                     </div>
-                                    
+
                                     <div className="mt-[8px] flex flex-col items-start">
                                         <span className="text-black font-medium text-[14px]">Savings account</span>
                                         <span className="mt-[4px] text-black font-medium text-[14px]">XXXX XXXX XXXX 0960</span>
@@ -1765,13 +1993,13 @@ const AccountSettings = () => {
                                 <div className="flex-1" />
 
                                 <div className="flex flex-col gap-[12px] w-full mb-8 items-center">
-                                    <button 
+                                    <button
                                         onClick={() => setBankingStep("linked_accounts")}
                                         className="w-[362px] h-[48px] bg-black text-white rounded-full font-medium text-[16px] flex items-center justify-center cursor-pointer active:scale-[0.98] transition-transform"
                                     >
                                         Add another bank
                                     </button>
-                                    <button 
+                                    <button
                                         onClick={() => setBankingStep("list")}
                                         className="w-[362px] h-[48px] border border-black text-black rounded-full font-medium text-[16px] flex items-center justify-center cursor-pointer active:scale-[0.98] transition-transform bg-white"
                                     >
@@ -1800,13 +2028,76 @@ const AccountSettings = () => {
 
             {/* Passkey Bottom Sheet */}
             {showPasskeySheet && (
-                <PasskeyBottomSheet 
+                <PasskeyBottomSheet
                     onClose={() => setShowPasskeySheet(false)}
                     onAddPasskey={() => setShowPasskeySheet(false)}
                     onOtherDevice={() => setShowPasskeySheet(false)}
                     email={email || "rohitkhandelwal.email.com"}
                 />
             )}
+
+            {/* Support Status Bottom Sheet */}
+            <SupportStatusBottomSheet
+                isOpen={isSupportStatusOpen}
+                onClose={() => setIsSupportStatusOpen(false)}
+                ticketId={selectedTicket?.id || ""}
+                ticketTitle={selectedTicket?.title || ""}
+                ticketAmount={selectedTicket?.amount}
+                steps={supportStatusSteps}
+                isResolved={ongoingSupport?.status === "Resolved"}
+                onUploadComplete={handleUploadComplete}
+            />
+
+            {/* Deletion Confirmation Popup */}
+            <AnimatePresence>
+                {isDeletePopupOpen && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+                            onClick={() => setIsDeletePopupOpen(false)}
+                        />
+                        <motion.div
+                            initial={{ y: 100, opacity: 0, x: "-50%" }}
+                            animate={{ y: 0, opacity: 1, x: "-50%" }}
+                            exit={{ y: 100, opacity: 0, x: "-50%" }}
+                            className="fixed bottom-[20px] left-1/2 w-[362px] h-[257px] bg-white rounded-[24px] p-[16px] flex flex-col z-50 shadow-xl"
+                        >
+                            <div className="flex flex-col gap-[16px]">
+                                <div className="flex items-center gap-[8px]">
+                                    <img
+                                        src={deleteIcon}
+                                        alt="Delete"
+                                        className="w-[20px] h-[20px]"
+                                    />
+                                    <h2 className="text-black font-bold text-[18px] leading-tight">Delete Bank Account?</h2>
+                                </div>
+                                <p className="text-black font-medium text-[16px] leading-[1.3]">
+                                    Are you sure you want to delete this bank account ending with XXXX 0960?
+                                </p>
+                            </div>
+
+                            <div className="mt-[40px] flex flex-col gap-[12px]">
+                                <button
+                                    onClick={() => setIsDeletePopupOpen(false)}
+                                    className="w-[330px] h-[44px] bg-[#5260FE] text-white rounded-full font-medium text-[16px] transition-transform active:scale-[0.98] self-center"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={confirmDelete}
+                                    className="w-[330px] h-[44px] bg-white border border-[#FF3B30] text-[#FF3B30] rounded-full font-medium text-[16px] transition-transform active:scale-[0.98] self-center"
+                                >
+                                    Yes, Delete
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
         </div>
     );
 };

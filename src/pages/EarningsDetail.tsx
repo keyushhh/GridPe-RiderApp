@@ -29,7 +29,7 @@ const EarningsDetail = () => {
                 {/* Header Container */}
                 <div className="flex-none flex items-center w-[362px] px-0 pt-12 pb-2 relative z-10">
                     <button
-                        onClick={() => navigate(-1)}
+                        onClick={() => navigate('/earnings')}
                         className="w-[32px] h-[32px] rounded-full bg-white shadow-sm flex items-center justify-center transition-transform active:scale-90"
                     >
                         <img src={chevronBackward} alt="Back" className="w-[18px] h-[18px] brightness-0" />
