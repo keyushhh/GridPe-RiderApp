@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import scooterIcon from '../assets/scooter.svg';
 import motorcycleIcon from '../assets/motorcycle.svg';
 import carIcon from '../assets/electric-vehicle.svg';
@@ -8,10 +8,11 @@ import searchIcon from '../assets/search.svg';
 
 const FetchingVehicleDetails: React.FC = () => {
     const navigate = useNavigate();
+    const location = useLocation();
 
     useEffect(() => {
         const timer = setTimeout(() => {
-            navigate('/onboarding/details-success');
+            navigate('/onboarding/details-success', { state: location.state });
         }, 5000);
         return () => clearTimeout(timer);
     }, [navigate]);

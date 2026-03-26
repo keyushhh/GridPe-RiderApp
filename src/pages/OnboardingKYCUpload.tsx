@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { ChevronLeft, CalendarIcon, X } from "lucide-react";
 import { format, differenceInYears } from "date-fns";
 
@@ -10,6 +10,7 @@ import { GlassCalendar } from "../components/GlassCalendar";
 
 const OnboardingKYCUpload = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const [searchParams] = useSearchParams();
     const documentType = searchParams.get("doc") || "aadhar";
 
@@ -292,6 +293,7 @@ const OnboardingKYCUpload = () => {
                             console.log('Navigating to selfie with fullName:', fullName);
                             navigate("/onboarding/kyc-selfie", { 
                                 state: { 
+                                    ...location.state,
                                     images, 
                                     documentNumber, 
                                     fullName, 

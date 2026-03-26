@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 import cancellationIcon from '../assets/cancellation.svg';
 import cashIcon from '../assets/cash.svg';
@@ -7,6 +7,7 @@ import otpIcon from '../assets/otp.svg';
 
 const OnboardingGuidelines: React.FC = () => {
     const navigate = useNavigate();
+    const location = useLocation();
 
     return (
         <div className="relative h-[100dvh] w-full flex flex-col items-center bg-white font-satoshi overflow-hidden">
@@ -92,7 +93,7 @@ const OnboardingGuidelines: React.FC = () => {
 
                 {/* Continue CTA */}
                 <button
-                    onClick={() => navigate('/onboarding/kyc')}
+                    onClick={() => navigate('/onboarding/kyc', { state: location.state })}
                     className="w-[362px] h-[48px] bg-[#5260FE] rounded-full flex items-center justify-center shrink-0 transition-opacity hover:opacity-90 active:scale-[0.98] mt-[226px]"
                 >
                     <span className="text-white text-[16px] font-medium">I Understand & Accept</span>

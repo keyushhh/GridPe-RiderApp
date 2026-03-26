@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import successCheckIcon from '../assets/success-check.svg';
 
 const DetailsFetchedSuccess: React.FC = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const [timeLeft, setTimeLeft] = useState(30);
 
     useEffect(() => {
         if (timeLeft <= 0) {
-            navigate('/onboarding/step-2');
+            navigate('/onboarding/step-2', { state: location.state });
             return;
         }
 
@@ -57,7 +58,7 @@ const DetailsFetchedSuccess: React.FC = () => {
 
                 {/* CTA Button */}
                 <button
-                    onClick={() => navigate('/onboarding/step-2')}
+                    onClick={() => navigate('/onboarding/step-2', { state: location.state })}
                     className="w-[362px] h-[48px] rounded-full bg-black text-white text-[16px] font-medium transition-opacity hover:opacity-90 active:scale-[0.98] flex items-center justify-center"
                 >
                     Continuing in {timeLeft}s...

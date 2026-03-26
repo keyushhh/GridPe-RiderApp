@@ -75,26 +75,17 @@ const OTP: React.FC = () => {
 
                 const finalId = rider?.id || riderUuid;
                 
-                // --- TEST ACCOUNT PERSISTENCE FALLBACK ---
-                // Since RLS prevents DB updates for the mock bypass account, 
-                // we check local storage for previously saved test data that survives logout.
-                const persistentTestData = localStorage.getItem(`test_data_${fullPhone}`);
-                let parsedTestData = null;
-                if (persistentTestData) {
-                    try { parsedTestData = JSON.parse(persistentTestData); } catch (e) { console.error(e); }
-                }
+                const riderExists = !!rider;
+                const kycStatus = riderExists ? 'verified' : 'pending';
+                const finalName = rider?.full_name || (rider as any)?.fullName || (rider as any)?.name || null;
 
-                const finalName = rider?.full_name || (rider as any)?.fullName || (rider as any)?.name || parsedTestData?.fullName || null;
-                const kycStatus = (rider?.kyc_status as any) || parsedTestData?.kycStatus || (finalName ? 'in_review' : 'pending');
-                // ------------------------------------------
-
-                console.log('Login details (test bypass):', { finalId, finalName, kycStatus });
+                console.log('Login details (test bypass):', { finalId, finalName, kycStatus, riderExists });
                 
                 setTimeout(() => {
                     // Update local auth state
                     login(finalId, finalName, kycStatus);
                     
-                    if (kycStatus === 'verified' || kycStatus === 'in_review') {
+                    if (riderExists) {
                         navigate('/dashboard');
                     } else {
                         navigate('/work-city');
@@ -124,21 +115,21 @@ const OTP: React.FC = () => {
                         .from('riders')
                         .select('*')
                         .eq('id', data.user.id)
-                        .single();
+                        .maybeSingle();
 
-                    if (riderError && riderError.code !== 'PGRST116') {
+                    if (riderError) {
                         console.error('Error fetching rider profile:', riderError);
                     }
 
                     console.log('Rider data fetched (real):', rider);
 
-                    // Fallback for name columns
+                    const riderExists = !!rider;
                     const fetchedName = rider?.full_name || (rider as any)?.fullName || (rider as any)?.name || null;
-                    const kycStatus = localStorage.getItem('rider_kyc_status') || (fetchedName ? 'in_review' : 'pending');
+                    const kycStatus = riderExists ? 'verified' : 'pending';
                     
                     login(data.user.id, fetchedName, kycStatus);
 
-                    if (kycStatus === 'verified' || kycStatus === 'in_review') {
+                    if (riderExists) {
                         navigate('/dashboard');
                     } else {
                         navigate('/work-city');

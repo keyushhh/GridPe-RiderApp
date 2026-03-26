@@ -33,80 +33,64 @@ const OnboardingKYCReview = () => {
     const getLastFour = (num: string) => num ? num.replace(/\s/g, "").slice(-4) : "";
 
     const handleConfirm = async () => {
+        if (!riderUuid) return;
         setIsSubmitting(true);
-        console.log('handleConfirm start:', { fullName, riderUuid });
-        
+
+        // Extract all propagated state
+        const { 
+            selected_city,
+            selected_hub, 
+            vehicle_model, 
+            vehicle_number,
+            fullName 
+        } = location.state || {};
+
+        console.log('Final Submission Data:', {
+            id: riderUuid,
+            full_name: fullName,
+            phone_number: phoneNumber,
+            vehicle_model,
+            vehicle_number,
+            selected_city: selected_city,
+            selected_hub: selected_hub
+        });
+
         try {
-            // Update or Insert rider profile in Supabase
-            if (riderUuid && fullName && phoneNumber) {
-                console.log('Upserting Supabase for rider:', { riderUuid, fullName, phoneNumber });
-                
-                // Helper function to try different column names with upsert
-                const tryUpdate = async (columnName: string) => {
-                    return await supabase
-                        .from('riders')
-                        .upsert({ 
-                            id: riderUuid, 
-                            [columnName]: fullName,
-                            phone_number: phoneNumber 
-                        }, { onConflict: 'id' })
-                        .select();
-                };
+            // Perform the final upsert to public.riders
+            const { error } = await supabase
+                .from('riders')
+                .upsert({
+                    id: riderUuid,
+                    full_name: fullName,
+                    phone_number: phoneNumber,
+                    vehicle_model: vehicle_model,
+                    vehicle_number: vehicle_number,
+                    selected_city: selected_city,
+                    selected_hub: selected_hub,
+                    kyc_status: 'in_review',
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'id' });
 
-                let { data, error } = await tryUpdate('full_name');
-                
-                // If full_name fails with "column does not exist", try alternative names
-                if (error && error.code === '42703') {
-                    console.warn('column full_name does not exist, trying name...');
-                    ({ data, error } = await tryUpdate('name'));
-                }
-                
-                if (error && error.code === '42703') {
-                    console.warn('column name does not exist, trying fullName...');
-                    ({ data, error } = await tryUpdate('fullName'));
-                }
+            if (error) throw error;
 
-                if (error) {
-                    console.error('Final Supabase upsert error:', error);
-                } else {
-                    console.log('Supabase upsert successful, returned data:', data);
-                }
+            // Update local auth state
+            login(riderUuid, fullName, "in_review");
 
-                // --- TEST ACCOUNT PERSISTENCE FALLBACK ---
-                // Save to localStorage if it's the test account, as RLS will likely block the DB update above.
-                if (riderUuid === '00000000-0000-0000-0000-000000000001' && phoneNumber) {
-                    console.log('Saving persistent backup for test account');
-                    const testData = {
-                        fullName: fullName,
-                        kycStatus: 'in_review',
-                        updatedAt: new Date().toISOString()
-                    };
-                    localStorage.setItem(`test_data_${phoneNumber}`, JSON.stringify(testData));
-                    
-                    // Also store specific document details for Account Settings and other screens
-                    localStorage.setItem('rider_kyc_doc_type', documentType || 'aadhar');
-                    localStorage.setItem('rider_kyc_doc_number', documentNumber || '');
-                }
-                // ------------------------------------------
-            } else {
-                console.warn('Cannot upsert Supabase: Missing required data', { riderUuid, fullName, phoneNumber });
-            }
-
-            // Update local state via useAuth
-            if (riderUuid) {
-                console.log('Refreshing local auth state with:', { riderUuid, fullName });
-                login(riderUuid, fullName, "in_review");
-            }
-
-            // Simulate submission flow
+            // Navigate to success page
             setTimeout(() => {
                 setIsSubmitting(false);
                 navigate("/onboarding/kyc-success");
-            }, 1000)
-        } catch (error) {
-            console.error("Error submitting KYC:", error);
+            }, 1000);
+
+        } catch (error: any) {
+            console.error("Error submitting KYC. Full Error Object:", error);
+            if (error.message) console.error("Error Message:", error.message);
+            if (error.code) console.error("Error Code:", error.code);
+            if (error.details) console.error("Error Details:", error.details);
+            if (error.hint) console.error("Error Hint:", error.hint);
+            
             setIsSubmitting(false);
-            // Optionally add an error toast here
+            // In a real app, we'd show a toast here
         }
     };
 

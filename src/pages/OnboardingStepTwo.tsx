@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import RCUploadBottomSheet from '../components/RCUploadBottomSheet';
 import pdfIcon from '../assets/pdf-icon.svg';
 import crossIcon from '../assets/cross.svg';
 
 const OnboardingStepTwo: React.FC = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
     const [rcNumber, setRcNumber] = useState('');
     const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -152,7 +153,12 @@ const OnboardingStepTwo: React.FC = () => {
 
                 {/* Continue CTA */}
                 <button
-                    onClick={() => navigate('/onboarding/fetching-details')}
+                    onClick={() => navigate('/onboarding/fetching-details', {
+                        state: {
+                            ...location.state,
+                            vehicle_number: rcNumber
+                        }
+                    })}
                     disabled={isContinueDisabled}
                     className={`w-[362px] h-[48px] rounded-full flex items-center justify-center shrink-0 transition-all ${
                         isContinueDisabled 

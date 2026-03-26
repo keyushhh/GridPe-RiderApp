@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Check, ChevronLeft, X } from "lucide-react";
 
 import aadharIcon from "../assets/aadhar.png";
@@ -10,6 +10,7 @@ import radioSelected from "../assets/radio-selected.svg";
 
 const OnboardingKYC = () => {
     const navigate = useNavigate();
+    const location = useLocation();
 
     // Default to aadhar selected initially to match other screens, or null.
     const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
@@ -130,7 +131,7 @@ const OnboardingKYC = () => {
 
                 {/* Continue CTA */}
                 <button
-                    onClick={() => navigate(`/onboarding/kyc-upload?doc=${selectedDoc}`)}
+                    onClick={() => navigate(`/onboarding/kyc-upload?doc=${selectedDoc}`, { state: { ...location.state, documentType: selectedDoc } })}
                     disabled={!selectedDoc}
                     className={`w-[362px] h-[48px] rounded-full flex items-center justify-center shrink-0 transition-opacity mt-auto mb-[24px] ${selectedDoc
                             ? 'bg-[#5260FE] hover:opacity-90 active:scale-[0.98] cursor-pointer'

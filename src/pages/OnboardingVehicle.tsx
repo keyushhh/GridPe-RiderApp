@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 import cycleIcon from '../assets/cycle.svg';
 import evIcon from '../assets/electric-vehicle.svg';
@@ -10,6 +10,7 @@ import scooterIcon from '../assets/scooter.svg';
 
 const OnboardingVehicle: React.FC = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const [selectedVehicle, setSelectedVehicle] = useState('motorcycle');
 
     const vehicles = [
@@ -89,7 +90,12 @@ const OnboardingVehicle: React.FC = () => {
 
                 {/* Continue CTA */}
                 <button
-                    onClick={() => navigate('/onboarding/step-2-new')}
+                    onClick={() => navigate('/onboarding/step-2-new', { 
+                        state: { 
+                            ...location.state, 
+                            vehicle_model: selectedVehicle 
+                        } 
+                    })}
                     className="w-[362px] h-[48px] bg-[#5260FE] rounded-full flex items-center justify-center shrink-0 transition-opacity hover:opacity-90 active:scale-[0.98]"
                 >
                     <span className="text-white text-[16px] font-medium">Continue</span>

@@ -43,6 +43,7 @@ import SupportStatusBottomSheet, { SupportStatusStep } from "../components/Suppo
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../context/ToastContext";
 import { getBankLogo } from "../utils/BankLogoMap";
+import { supabase } from "../lib/supabase";
 
 // Helper component for swipe-to-delete
 const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any) => {
@@ -136,7 +137,7 @@ const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any)
 const AccountSettings = () => {
     const navigate = useNavigate();
     const location = useLocation();
-    const { phoneNumber, logout, kycStatus, fullName, email, avatar, updateAvatar } = useAuth();
+    const { phoneNumber, logout, kycStatus, fullName, email, avatar, updateAvatar, riderUuid } = useAuth();
     const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState(location.state?.activeTab || "Home");
     const [loginDevices, setLoginDevices] = useState<{ id: number, model: string, city: string, lastActive: string, app: string }[]>([]);
@@ -166,6 +167,7 @@ const AccountSettings = () => {
     const [isDeletePopupOpen, setIsDeletePopupOpen] = useState(false);
     const [isSuccessPopupOpen, setIsSuccessPopupOpen] = useState(false);
     const [accountToDelete, setAccountToDelete] = useState<any>(null);
+    const [dynamicRiderId, setDynamicRiderId] = useState<string>("Loading...");
 
     // Persistence Logic
     useEffect(() => {
@@ -238,18 +240,40 @@ const AccountSettings = () => {
     });
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    console.log('AccountSettings render:', { kycStatus, fullName });
+    useEffect(() => {
+        const fetchRiderId = async () => {
+            if (!riderUuid) return;
+            try {
+                const { data, error } = await supabase
+                    .from('riders')
+                    .select('rider_id')
+                    .eq('id', riderUuid)
+                    .maybeSingle();
+                
+                if (data?.rider_id) {
+                    setDynamicRiderId(data.rider_id);
+                } else if (!error) {
+                    setDynamicRiderId("GRIDPE-RDR1023"); // Fallback if no ID yet
+                }
+            } catch (err) {
+                console.error('Error fetching rider_id:', err);
+            }
+        };
+        fetchRiderId();
+    }, [riderUuid]);
+
+    console.log('AccountSettings render:', { kycStatus, fullName, dynamicRiderId });
 
     const menuItems = ["Home", "Personal Info", "Security", "Banking", "Privacy & Data", "Help & Support"];
 
     // Get actual data for the rider
     const riderName = fullName || "";
     const riderMobile = phoneNumber ? `+91 ${phoneNumber}` : "";
-    const riderId = "GRIDPE-RDR1023";
+    const riderIdValue = dynamicRiderId;
 
     const handleCopyId = () => {
-        navigator.clipboard.writeText(riderId);
-        // We could add a toast here if needed
+        navigator.clipboard.writeText(riderIdValue);
+        showToast("Rider ID copied to clipboard", "success");
     };
 
     const handleUploadButtonClick = () => {
@@ -565,7 +589,7 @@ const AccountSettings = () => {
                             </span>
                             <div className="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform" onClick={handleCopyId}>
                                 <span className="text-[#5260FE] font-medium text-[14px]">
-                                    {riderId}
+                                    {riderIdValue}
                                 </span>
                                 <img src={copyIcon} alt="Copy" className="w-[16px] h-[16px]" />
                             </div>
