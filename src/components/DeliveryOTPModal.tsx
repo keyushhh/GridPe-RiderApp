@@ -4,7 +4,7 @@ import verifiedIcon from '../assets/verified.svg';
 
 interface DeliveryOTPModalProps {
   onClose: () => void;
-  onVerify: () => void;
+  onVerify: (otp: string) => void;
 }
 
 const DeliveryOTPModal: React.FC<DeliveryOTPModalProps> = ({ onClose, onVerify }) => {
@@ -33,7 +33,7 @@ const DeliveryOTPModal: React.FC<DeliveryOTPModalProps> = ({ onClose, onVerify }
 
   useEffect(() => {
     const fullOtp = otp.join('');
-    if (fullOtp === '123456') {
+    if (fullOtp.length === 6) {
       setIsVerified(true);
     } else {
       setIsVerified(false);
@@ -90,10 +90,10 @@ const DeliveryOTPModal: React.FC<DeliveryOTPModalProps> = ({ onClose, onVerify }
         {/* CTA Button */}
         <div className="mt-[38px] mb-[25px]">
           <button
-            onClick={onVerify}
-            disabled={!isVerified}
+            onClick={() => onVerify(otp.join(''))}
+            disabled={otp.some(digit => digit === '')}
             className={`w-[330px] h-[44px] rounded-full text-white font-satoshi font-normal text-[16px] transition-all
-              ${isVerified ? 'bg-[#5260FE] active:scale-95' : 'bg-[#5260FE]/50 cursor-not-allowed'}`}
+              ${!otp.some(digit => digit === '') ? 'bg-[#5260FE] active:scale-95' : 'bg-[#5260FE]/50 cursor-not-allowed'}`}
           >
             Verify Code
           </button>

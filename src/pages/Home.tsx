@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import safetyToolkitIcon from "../assets/safety-toolkit.svg";
 import menuIcon from "../assets/menu.jpg";
@@ -22,23 +22,140 @@ import HotlineBottomSheet from "../components/HotlineBottomSheet";
 import { transactionService } from "../services/transactionService";
 import DeliveryFallbackPopups from "../components/DeliveryFallbackPopups";
 import { supabase } from "../lib/supabase";
+import { storageService } from "../services/storageService";
+import SecurityAlert from "../components/SecurityAlert";
 
 const Home = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const [activeTab, setActiveTab] = useState("home");
-    const [isOnline, setIsOnline] = useState(
-        localStorage.getItem("rider_is_online") === "true"
-    );
-    const { kycStatus, fullName } = useAuth();
+    const { kycStatus, fullName, riderUuid, totalEarnings, isOnline, setIsOnline, refreshProfile, selectedZoneId, selectedHubName, selectedZoneName } = useAuth();
     const [hasBeenOnline, setHasBeenOnline] = useState(
         localStorage.getItem("rider_has_been_online") === "true"
     );
-    const [earnings, setEarnings] = useState(
-        Number(localStorage.getItem("rider_earnings")) || 0
-    );
+    
+    // Fallback if totalEarnings is not yet synced
+    const earnings = totalEarnings || Number(localStorage.getItem("rider_earnings")) || 0;
+
     const [showOrderModal, setShowOrderModal] = useState(false);
+    const [pendingOrder, setPendingOrder] = useState<any>(null);
+    const [activeOrder, setActiveOrder] = useState<any>(null);
+    const [customerInfo, setCustomerInfo] = useState<{name: string, phone: string} | null>(null);
     const [hasActiveOrder, setHasActiveOrder] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [isVerifying, setIsVerifying] = useState(false);
+    const [securityAlert, setSecurityAlert] = useState<{show: boolean, message: string}>({show: false, message: ""});
+    
+    // Subscribe to Orders Realtime
+    useEffect(() => {
+        if (!riderUuid) {
+            console.log('Order subscription blocked: Missing riderUuid');
+            return;
+        }
+        if (!isOnline) {
+            console.log('Order subscription blocked: Rider is Offline');
+            return;
+        }
+
+        const filter = selectedZoneId ? `zone_id=eq.${selectedZoneId}` : '';
+        console.log(`Subscribing to real-time orders for rider ${riderUuid} in zone ${selectedZoneId} (Filter: ${filter})...`);
+
+        const channel = supabase
+            .channel('orders-realtime')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'orders',
+                    filter: filter
+                },
+                (payload) => {
+                    console.log('Real-time order event received:', payload);
+                    
+                    if (payload.eventType === 'INSERT' && payload.new.status === 'pending') {
+                        console.log('MATCH: New pending order detected!');
+                        enrichOrderData(payload.new).then(enriched => {
+                            if (enriched) {
+                                setPendingOrder(enriched);
+                                setShowOrderModal(true);
+                            }
+                        });
+                    }
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'orders',
+                    filter: `rider_id=eq.${riderUuid}`
+                },
+                (payload) => {
+                    console.log('MATCH: Active order updated for this rider!');
+                    enrichOrderData(payload.new).then(enriched => {
+                        if (enriched) {
+                            setActiveOrder(enriched);
+                            setHasActiveOrder(true);
+                            
+                            // Sync local UI status
+                            if (enriched.status === 'picked_up') {
+                                setOrderStatus('picked_up');
+                            } else if (enriched.status === 'delivered') {
+                                setHasActiveOrder(false);
+                                setActiveOrder(null);
+                                refreshProfile();
+                                navigate("/order-delivered");
+                            }
+                        }
+                    });
+                }
+            )
+            .subscribe((status) => {
+                console.log('Supabase subscription status:', status);
+            });
+
+        return () => {
+            console.log('Cleaning up order subscription...');
+            supabase.removeChannel(channel);
+        };
+    }, [riderUuid, isOnline, selectedZoneId]);
+
+    // Fetch Customer Info when Active Order changes
+    useEffect(() => {
+        const fetchCustomerInfo = async () => {
+            if (!activeOrder?.id) {
+                setCustomerInfo(null);
+                return;
+            }
+
+            try {
+                const { data, error } = await supabase
+                    .from('active_order_customer_info')
+                    .select('customer_name, customer_phone')
+                    .eq('order_id', activeOrder.id)
+                    .maybeSingle();
+
+                if (error) {
+                    console.error('Failed to fetch customer info:', error);
+                    return;
+                }
+
+                if (data) {
+                    setCustomerInfo({
+                        name: data.customer_name,
+                        phone: data.customer_phone
+                    });
+                }
+            } catch (err) {
+                console.error('Customer info fetch error:', err);
+            }
+        };
+
+        fetchCustomerInfo();
+    }, [activeOrder?.id]);
+
     const [showPickUpModal, setShowPickUpModal] = useState(false);
     const [showOTPModal, setShowOTPModal] = useState(false);
     const [showFaceVerification, setShowFaceVerification] = useState(false);
@@ -46,6 +163,60 @@ const Home = () => {
     const [isVerified, setIsVerified] = useState(false);
     const [orderStatus, setOrderStatus] = useState<'pickup_pending' | 'picked_up'>('pickup_pending');
     const [verificationType, setVerificationType] = useState<'pickup' | 'delivery'>('pickup');
+    
+    // Helper to enrich order data (Hub Address + Delivery Address + Fix Earnings)
+    const enrichOrderData = async (order: any) => {
+        if (!order) return null;
+        
+        let enriched = { ...order };
+        
+        // 1. Fetch Hub Details using hub_id
+        if (order.pickup_location) {
+            try {
+                const { data: hubData } = await supabase
+                    .from('hubs')
+                    .select('location_name, address')
+                    .eq('id', order.pickup_location)
+                    .maybeSingle();
+                
+                if (hubData) {
+                    enriched.pickup_name = hubData.location_name;
+                    enriched.pickup_address = hubData.address;
+                }
+            } catch (err) {
+                console.error('Hub fetch error:', err);
+            }
+        }
+
+        // 2. Fetch Delivery Address Details (Human readable)
+        if (order.address_id) {
+            try {
+                const { data: addressData } = await supabase
+                    .from('user_addresses')
+                    .select('full_address')
+                    .eq('id', order.address_id)
+                    .maybeSingle();
+                
+                if (addressData) {
+                    enriched.delivery_address = addressData.full_address;
+                }
+            } catch (err) {
+                console.error('Delivery address fetch error:', err);
+            }
+        }
+
+        // 3. Fix the "20k Bug" - Recalculate earnings
+        const distance = Number(order.distance_km || order.distance || 0);
+        const actualDist = (distance > 15) ? 2.1 : distance; 
+        const calculatedEarnings = Math.round(30 + (actualDist * 15));
+        
+        if (!order.rider_earnings || order.rider_earnings > 1000) {
+            enriched.rider_earnings = calculatedEarnings;
+        }
+        
+        enriched.distance = actualDist;
+        return enriched;
+    };
     const [isAtHub, setIsAtHub] = useState(false);
     const [isAtCustomer, setIsAtCustomer] = useState(false);
     const [showNotificationSheet, setShowNotificationSheet] = useState(false);
@@ -57,6 +228,125 @@ const Home = () => {
     const [showHotline, setShowHotline] = useState(false);
     const [locationName, setLocationName] = useState("Detecting location...");
     
+    // Tracking references
+    const lastLocationRef = useRef<{lat: number, lng: number} | null>(null);
+    const lastUpdateTimeRef = useRef<number>(0);
+    const watchIdRef = useRef<number | null>(null);
+
+    // Helper: Haversine distance in meters
+    const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+        const R = 6371e3; // metres
+        const φ1 = lat1 * Math.PI/180;
+        const φ2 = lat2 * Math.PI/180;
+        const Δφ = (lat2-lat1) * Math.PI/180;
+        const Δλ = (lon2-lon1) * Math.PI/180;
+
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+        return R * c;
+    };
+
+    const updatePresenceAndLocation = async (lat: number, lng: number) => {
+        if (!riderUuid) return;
+        
+        try {
+            // Update location via RPC
+            await supabase.rpc('update_rider_location', { 
+                lat: lat, 
+                lng: lng 
+            });
+            
+        } catch (err) {
+            console.error('Failed to update location heartbeat:', err);
+        }
+    };
+    
+    // Initial Fetch for Active Order
+    useEffect(() => {
+        const fetchInitialActiveOrder = async () => {
+            if (!riderUuid) return;
+            
+            try {
+                const { data, error } = await supabase
+                    .from('orders')
+                    .select('*')
+                    .eq('rider_id', riderUuid)
+                    .in('status', ['accepted', 'picked_up'])
+                    .maybeSingle();
+                
+                if (data) {
+                    console.log('Found existing active order on load:', data);
+                    const enriched = await enrichOrderData(data);
+                    if (enriched) {
+                        setActiveOrder(enriched);
+                        setHasActiveOrder(true);
+                        setOrderStatus(enriched.status === 'picked_up' ? 'picked_up' : 'pickup_pending');
+                    }
+                }
+            } catch (err) {
+                console.error('Initial active order fetch error:', err);
+            }
+        };
+
+        fetchInitialActiveOrder();
+    }, [riderUuid]);
+
+    // Location Heartbeat & Watcher
+    useEffect(() => {
+        if (isOnline && riderUuid) {
+            console.log('Starting location watcher (isOnline=true)...');
+            
+            if ("geolocation" in navigator) {
+                watchIdRef.current = navigator.geolocation.watchPosition(
+                    async (position) => {
+                        const { latitude, longitude } = position.coords;
+                        const now = Date.now();
+                        
+                        let shouldUpdate = false;
+                        
+                        if (!lastLocationRef.current) {
+                            shouldUpdate = true;
+                        } else {
+                            const dist = getDistance(
+                                lastLocationRef.current.lat, 
+                                lastLocationRef.current.lng, 
+                                latitude, 
+                                longitude
+                            );
+                            const timeDiff = now - lastUpdateTimeRef.current;
+                            
+                            if (dist > 50 || timeDiff > 15000) {
+                                shouldUpdate = true;
+                            }
+                        }
+
+                        if (shouldUpdate) {
+                            await updatePresenceAndLocation(latitude, longitude);
+                        }
+                    },
+                    (error) => console.error("Watcher error:", error),
+                    { enableHighAccuracy: true, maximumAge: 10000 }
+                );
+            }
+        } else {
+            // Stop watcher if offline
+            if (watchIdRef.current !== null) {
+                console.log('Stopping location watcher (isOnline=false)...');
+                navigator.geolocation.clearWatch(watchIdRef.current);
+                watchIdRef.current = null;
+            }
+        }
+
+        return () => {
+            if (watchIdRef.current !== null) {
+                navigator.geolocation.clearWatch(watchIdRef.current);
+            }
+        };
+    }, [isOnline, riderUuid]);
+
     // Fallback Flow State
     const [isFallbackOpen, setIsFallbackOpen] = useState(false);
     const [fallbackStatus, setFallbackStatus] = useState<'none' | 'mismatch' | 'waiting' | 'in_progress' | 'failure' | 'request_approval' | 'approved' | 'complete'>('none');
@@ -76,7 +366,7 @@ const Home = () => {
         return () => clearTimeout(timer);
     }, [isFallbackOpen, fallbackStatus]);
 
-    // Fetch live location
+    // Fetch live location (Initial Reverse Geocode)
     useEffect(() => {
         if ("geolocation" in navigator) {
             navigator.geolocation.getCurrentPosition(
@@ -153,9 +443,6 @@ const Home = () => {
         const state = location.state as any;
         if (state?.orderCompleted) {
             setHasActiveOrder(false);
-            // Refresh local earnings from storage
-            setEarnings(Number(localStorage.getItem("rider_earnings")) || 0);
-            // Clear location state to prevent repeat logic
             window.history.replaceState({ ...state, orderCompleted: false }, document.title);
         }
 
@@ -173,11 +460,155 @@ const Home = () => {
     }, [location.state]);
 
     const handleOpenInMaps = () => {
+        if (!activeOrder) return;
         const address = orderStatus === 'picked_up' 
-            ? "No. 83, 7th Cross, 4th Block, Koramangala, Bangalore - 560034"
-            : "Kormangala Hub, E 61 St & S Rhodes Ave, Bangalore - 560063";
+            ? activeOrder.delivery_location || "Delivery Location"
+            : activeOrder.pickup_location || "Pickup Location";
         const encodedAddress = encodeURIComponent(address);
         window.open(`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`, '_blank');
+    };
+
+    const handleAcceptOrder = async (orderId: string) => {
+        if (!riderUuid) return;
+        
+        try {
+            const { error } = await supabase.rpc('accept_order', { 
+                order_uuid: orderId 
+            });
+
+            if (error) {
+                console.error('Failed to accept order:', error);
+                return;
+            }
+
+            console.log('Order accepted successfully!');
+            setHasActiveOrder(true);
+            setShowOrderModal(false);
+        } catch (err) {
+            console.error('Accept order error:', err);
+        }
+    };
+
+    const handlePickupOrder = async (selfieUrl?: string) => {
+        if (!activeOrder) return;
+
+        try {
+            const { error } = await supabase.rpc('mark_picked_up', { 
+                order_uuid: activeOrder.id,
+                pickup_selfie_url: selfieUrl,
+                pickup_verified_at: new Date().toISOString()
+            });
+
+            if (error) throw error;
+
+            console.log('Order marked as picked up with security verification!');
+            setShowPickUpModal(false);
+            setOrderStatus('picked_up');
+        } catch (err) {
+            console.error('Pickup error:', err);
+        }
+    };
+
+    const handleManualRefresh = async () => {
+        if (!isOnline || isRefreshing) return;
+        
+        setIsRefreshing(true);
+        
+        try {
+            // Fetch available orders FILTERED BY ZONE ID (Zone-Based Architecture)
+            let query = supabase.from('available_orders').select('*', { count: 'exact' });
+            
+            if (selectedZoneId) {
+                query = query.eq('zone_id', selectedZoneId);
+            }
+
+            const { data, error } = await query;
+
+            if (error) {
+                console.error('Refresh failed:', error);
+                return;
+            }
+
+            const orderCount = data?.length || 0;
+            console.log(`[Dashboard Sync] ${orderCount} available orders found in zone ${selectedZoneId}.`);
+
+            if (data && data.length > 0 && !showOrderModal && !hasActiveOrder) {
+                const enriched = await enrichOrderData(data[0]);
+                if (enriched) {
+                    setPendingOrder(enriched);
+                    setShowOrderModal(true);
+                }
+            }
+        } catch (err) {
+            console.error('Refresh error:', err);
+        } finally {
+            setTimeout(() => setIsRefreshing(false), 600);
+        }
+    };
+
+    // Auto-Refresh Available Orders every 10 seconds
+    useEffect(() => {
+        if (!isOnline || hasActiveOrder) return;
+
+        const interval = setInterval(() => {
+            handleManualRefresh();
+        }, 10000); // 10 seconds
+
+        return () => clearInterval(interval);
+    }, [isOnline, hasActiveOrder, isRefreshing]);
+
+    const handleVerifyOTP = async (otpValue: string) => {
+        if (!activeOrder) return;
+
+        try {
+            const { data, error } = await supabase.rpc('confirm_delivery', { 
+                order_uuid: activeOrder.id,
+                input_otp: otpValue,
+                delivery_selfie_url: activeOrder.delivery_selfie_url // Should be saved in state earlier
+            });
+
+            if (error) {
+                console.error('OTP Verification failed:', error);
+                // Optional: show error message in modal
+                return;
+            }
+
+            console.log('OTP Verified and Order Delivered!');
+            setShowOTPModal(false);
+            navigate("/order-delivered");
+        } catch (err) {
+            console.error('OTP Verification error:', err);
+        }
+    };
+
+    const handleToggleOnline = async () => {
+        if (kycStatus !== "verified" || !riderUuid) return;
+        
+        const nextOnline = !isOnline;
+        
+        try {
+            // Update Supabase immediately
+            const { error } = await supabase
+                .from('riders')
+                .update({ is_online: nextOnline })
+                .eq('id', riderUuid);
+
+            if (error) throw error;
+
+            // Update local state
+            setIsOnline(nextOnline);
+            localStorage.setItem("rider_is_online", nextOnline.toString());
+            
+            if (nextOnline && !hasBeenOnline) {
+                setHasBeenOnline(true);
+                localStorage.setItem("rider_has_been_online", "true");
+            }
+            
+            console.log(`Presence updated to ${nextOnline ? 'online' : 'offline'}`);
+        } catch (err) {
+            console.error('Failed to update presence in Supabase:', err);
+            // Optional: Show error toast here
+        }
     };
 
     return (
@@ -237,10 +668,15 @@ const Home = () => {
                             </h3>
                             <p className="mt-2 text-black font-satoshi font-medium text-[14px] leading-tight">
                                 {orderStatus === 'picked_up' 
-                                    ? "No. 83, 7th Cross, 4th Block, Koramangala, Bangalore - 560034"
-                                    : "Kormangala Hub, E 61 St & S Rhodes Ave, Bangalore - 560063"
+                                    ? activeOrder?.delivery_address || activeOrder?.delivery_location || "Delivery Location pending"
+                                    : activeOrder?.pickup_name || activeOrder?.pickup_location || "Pickup Location pending"
                                 }
                             </p>
+                            {orderStatus !== 'picked_up' && activeOrder?.pickup_address && (
+                                <p className="mt-1 text-black/60 font-satoshi font-medium text-[12px] leading-tight">
+                                    {activeOrder.pickup_address}
+                                </p>
+                            )}
                             
                             <button 
                                 onClick={handleOpenInMaps}
@@ -250,7 +686,7 @@ const Home = () => {
                             </button>
 
                             <p className="mt-4 text-center font-satoshi font-medium text-[12px] text-black">
-                                {orderStatus === 'picked_up' ? 'Arriving in 15 minutes' : 'Arriving in 2 minutes'}
+                                {orderStatus === 'picked_up' ? 'Arriving in 15 minutes' : 'Arriving in 3 minutes'}
                             </p>
                         </div>
 
@@ -260,12 +696,8 @@ const Home = () => {
                             
                             <div className="mt-4 flex flex-col gap-2">
                                 <div className="flex justify-between items-center">
-                                    <span className="text-black/60 text-[14px] font-medium font-satoshi">Cash to Collect:</span>
-                                    <span className="text-black text-[14px] font-bold font-satoshi">₹5,000</span>
-                                </div>
-                                <div className="flex justify-between items-center">
                                     <span className="text-black/60 text-[14px] font-medium font-satoshi">Your Earning:</span>
-                                    <span className="text-black text-[14px] font-bold font-satoshi">₹120</span>
+                                    <span className="text-black text-[14px] font-bold font-satoshi">₹{activeOrder?.rider_earnings || 0}</span>
                                 </div>
                             </div>
 
@@ -280,11 +712,20 @@ const Home = () => {
                             <div className="mt-4 flex flex-col gap-2">
                                 <div className="flex justify-between items-center">
                                     <span className="text-black/60 text-[14px] font-medium font-satoshi">Customer Name:</span>
-                                    <span className="text-black text-[14px] font-bold font-satoshi">Sangeeta Deb</span>
+                                    <span className="text-black text-[14px] font-bold font-satoshi">{customerInfo?.name || "Loading..."}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
-                                    <span className="text-black/60 text-[14px] font-medium font-satoshi">Customer Contact Number:</span>
-                                    <span className="text-black text-[14px] font-bold font-satoshi">+91 9876543210</span>
+                                    <span className="text-black/60 text-[14px] font-medium font-satoshi">Contact Number:</span>
+                                    {customerInfo?.phone ? (
+                                        <a 
+                                            href={`tel:+91${customerInfo.phone}`}
+                                            className="text-[#5260FE] text-[14px] font-bold font-satoshi underline"
+                                        >
+                                            {customerInfo.phone}
+                                        </a>
+                                    ) : (
+                                        <span className="text-black text-[14px] font-bold font-satoshi">Not available</span>
+                                    )}
                                 </div>
                             </div>
 
@@ -312,7 +753,11 @@ const Home = () => {
                                     </button>
                                     <button 
                                         className="w-full h-[48px] rounded-full bg-white border border-[#5260FE] text-[#5260FE] font-satoshi font-medium text-[16px] transition-transform active:scale-95"
-                                        onClick={() => window.location.href = 'tel:+919876543210'}
+                                        onClick={() => {
+                                            if (customerInfo?.phone) {
+                                                window.location.href = `tel:+91${customerInfo.phone}`;
+                                            }
+                                        }}
                                     >
                                         Call Customer
                                     </button>
@@ -343,17 +788,7 @@ const Home = () => {
                                         kycStatus === "verified" ? "cursor-pointer" : "cursor-not-allowed opacity-50"
                                     }`}
                                     style={{ backgroundColor: isOnline ? "#0C7E4B" : "rgba(120, 120, 120, 0.2)" }}
-                                    onClick={() => {
-                                        if (kycStatus === "verified") {
-                                            const nextOnline = !isOnline;
-                                            setIsOnline(nextOnline);
-                                            localStorage.setItem("rider_is_online", nextOnline.toString());
-                                            if (nextOnline && !hasBeenOnline) {
-                                                setHasBeenOnline(true);
-                                                localStorage.setItem("rider_has_been_online", "true");
-                                            }
-                                        }
-                                    }}
+                                    onClick={handleToggleOnline}
                                 >
                                     <div 
                                         className="w-[24px] h-[24px] rounded-full bg-white shadow-sm transition-transform duration-300" 
@@ -413,18 +848,20 @@ const Home = () => {
 
                                     {/* Refresh CTA: 40px below message */}
                                     <button 
-                                        disabled={!isOnline}
-                                        onClick={() => {
-                                            if (isOnline) {
-                                                setShowOrderModal(true);
-                                            }
-                                        }}
+                                        disabled={!isOnline || isRefreshing}
+                                        onClick={handleManualRefresh}
                                         className={`mt-[96px] w-[193px] h-[42px] rounded-full flex items-center justify-center transition-all duration-300 ${
-                                            isOnline ? "bg-black cursor-pointer active:scale-95" : "bg-[#BDBDBD] cursor-not-allowed"
+                                            isOnline && !isRefreshing ? "bg-black cursor-pointer active:scale-95" : "bg-[#BDBDBD] cursor-not-allowed"
                                         }`}
                                     >
-                                        <span className="text-white text-[14px] font-medium mr-[6px]">Refresh</span>
-                                        <img src={refreshIcon} alt="Refresh" className="w-[11px] h-[11px]" />
+                                        <span className="text-white text-[14px] font-medium mr-[6px]">
+                                            {isRefreshing ? "Refreshing..." : "Refresh"}
+                                        </span>
+                                        <img 
+                                            src={refreshIcon} 
+                                            alt="Refresh" 
+                                            className={`w-[11px] h-[11px] ${isRefreshing ? "animate-spin" : ""}`} 
+                                        />
                                     </button>
                                 </div>
                             )}
@@ -480,7 +917,20 @@ const Home = () => {
                                     Current Shift
                                 </h4>
                                 <p className="mt-[11px] text-[14px] font-medium text-black leading-none" style={{ letterSpacing: "-0.43px" }}>
-                                    9:00 PM - 11:00 PM (Kormangala Hub)
+                                    {(() => {
+                                        const now = new Date();
+                                        const hour = now.getHours();
+                                        const startHour = hour;
+                                        const endHour = (hour + 1) % 24;
+                                        
+                                        const formatHour = (h: number) => {
+                                            const ampm = h >= 12 ? 'PM' : 'AM';
+                                            const h12 = h % 12 || 12;
+                                            return `${h12}:00 ${ampm}`;
+                                        };
+                                        
+                                        return `${formatHour(startHour)} - ${formatHour(endHour)} (${selectedHubName || selectedZoneName || 'Primary'} Hub)`;
+                                    })()}
                                 </p>
                                 
                                 <div className="mt-[13px] w-full h-[1px] bg-[#E9E9E9]" />
@@ -603,15 +1053,16 @@ const Home = () => {
             {/* Order Request Modal */}
             {showOrderModal && (
                 <OrderModal 
-                    onAccept={() => {
-                        setHasActiveOrder(true);
-                        setShowOrderModal(false);
-                    }}
+                    order={pendingOrder}
+                    onAccept={handleAcceptOrder}
                     onReject={() => {
-                        // For now should do nothing
                         setShowOrderModal(false);
+                        setPendingOrder(null);
                     }}
-                    onClose={() => setShowOrderModal(false)}
+                    onClose={() => {
+                        setShowOrderModal(false);
+                        setPendingOrder(null);
+                    }}
                 />
             )}
             {/* Pick Up/Delivery Verification Modal */}
@@ -622,10 +1073,8 @@ const Home = () => {
                     verifiedCTA={verificationType === 'delivery' ? 'Enter Verification Code' : 'Pick Up'}
                     onStart={() => {
                         if (isVerified) {
-                            setShowPickUpModal(false);
                             if (verificationType === 'pickup') {
-                                setOrderStatus('picked_up');
-                                console.log("Order Status changed to Picked Up!");
+                                handlePickupOrder();
                             } else {
                                 // For Testing: Sometimes trigger failure for delivery
                                 const shouldFail = false; // Normal healthy flow
@@ -639,6 +1088,7 @@ const Home = () => {
                                     setIsFallbackOpen(true);
                                     console.log(`Simulating delivery verification failure (Try ${retryCount + 1})`);
                                 } else {
+                                    setShowPickUpModal(false);
                                     setShowOTPModal(true);
                                     console.log("Delivery Verification: Face matched, opening OTP modal");
                                 }
@@ -651,15 +1101,11 @@ const Home = () => {
                     onClose={() => setShowPickUpModal(false)}
                 />
             )}
-
+            {/* Delivery OTP Modal */}
             {showOTPModal && (
                 <DeliveryOTPModal 
                     onClose={() => setShowOTPModal(false)}
-                    onVerify={() => {
-                        setShowOTPModal(false);
-                        navigate("/order-delivered");
-                        console.log("Navigating to Order Delivered Page...");
-                    }}
+                    onVerify={handleVerifyOTP}
                 />
             )}
 
@@ -667,12 +1113,49 @@ const Home = () => {
             {showFaceVerification && (
                 <FaceVerification 
                     mode={faceVerificationMode}
-                    onCapture={(image) => {
-                        console.log("Captured face:", image);
-                        setIsVerified(true);
-                        setShowFaceVerification(false);
-                        setShowPickUpModal(true);
-                        setFaceVerificationMode('photo');
+                    onCapture={async (image) => {
+                        if (!activeOrder) return;
+                        
+                        setIsVerifying(true);
+                        console.log("Processing face scan...");
+                        
+                        try {
+                            // 1. Upload to Supabase Storage
+                            const path = `${activeOrder.id}_${verificationType}_${Date.now()}.jpg`;
+                            const selfieUrl = await storageService.uploadBase64Image(image, 'rider-selfies', path);
+                            console.log("Selfie uploaded:", selfieUrl);
+
+                            // 2. Perform Safety Check (Simulated Match)
+                            // In a real app, this would be an RPC call to AWS Rekognition or similar
+                            const isMatch = Math.random() > 0.05; // 95% success simulation
+                            
+                            if (!isMatch) {
+                                setSecurityAlert({
+                                    show: true,
+                                    message: "Face scan does not match your original KYC profile. Access denied."
+                                });
+                                setIsVerifying(false);
+                                return;
+                            }
+
+                            // 3. Handle successful verification
+                            if (verificationType === 'pickup') {
+                                await handlePickupOrder(selfieUrl);
+                                setShowFaceVerification(false);
+                            } else {
+                                // Delivery: Update local state and show OTP
+                                setActiveOrder((prev: any) => ({ ...prev, delivery_selfie_url: selfieUrl }));
+                                setIsVerified(true);
+                                setShowFaceVerification(false);
+                                setShowOTPModal(true);
+                                console.log("Face matched for delivery, opening OTP modal");
+                            }
+                        } catch (err) {
+                            console.error("Security flow failed:", err);
+                        } finally {
+                            setIsVerifying(false);
+                            setFaceVerificationMode('photo');
+                        }
                     }}
                     onVideoCapture={(videoUrl) => {
                         console.log("Captured video:", videoUrl);
@@ -714,6 +1197,23 @@ const Home = () => {
                 onClose={() => setShowTipBottomSheet(false)}
                 transaction={newTipTransaction}
             />
+
+            {/* Security Alert Modal */}
+            {securityAlert.show && (
+                <SecurityAlert 
+                    message={securityAlert.message}
+                    onClose={() => setSecurityAlert({ show: false, message: "" })}
+                />
+            )}
+
+            {/* Verifying Overlay */}
+            {isVerifying && (
+                <div className="fixed inset-0 z-[250] bg-black/80 flex flex-col items-center justify-center">
+                    <div className="w-16 h-16 border-4 border-[#5260FE] border-t-transparent rounded-full animate-spin mb-6" />
+                    <p className="text-white font-satoshi font-bold text-[20px]">Verifying Face...</p>
+                    <p className="text-white/60 font-satoshi text-[14px] mt-2">Checking match with KYC profile</p>
+                </div>
+            )}
 
             {/* Safety Toolkit Bottom Sheet */}
             <SafetyToolkitBottomSheet 

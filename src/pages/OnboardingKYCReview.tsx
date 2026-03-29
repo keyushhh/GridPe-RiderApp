@@ -6,6 +6,7 @@ import checkboxSelected from "../assets/checkbox-selected.svg";
 import { format } from "date-fns";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
+import { storageService } from "../services/storageService";
 
 const OnboardingKYCReview = () => {
     const navigate = useNavigate();
@@ -38,8 +39,8 @@ const OnboardingKYCReview = () => {
 
         // Extract all propagated state
         const { 
-            selected_city,
-            selected_hub, 
+            selected_zone_id,
+            selected_hub_id,
             vehicle_model, 
             vehicle_number,
             fullName 
@@ -51,12 +52,32 @@ const OnboardingKYCReview = () => {
             phone_number: phoneNumber,
             vehicle_model,
             vehicle_number,
-            selected_city: selected_city,
-            selected_hub: selected_hub
+            zone_id: selected_zone_id,
+            hub_id: selected_hub_id
         });
 
         try {
-            // Perform the final upsert to public.riders
+            // 1. Upload Documents to Supabase Storage
+            console.log("Uploading KYC documents...");
+            const uploadPromises = [];
+            
+            if (images?.front) {
+                const frontPath = `kyc_${riderUuid}_front_${Date.now()}.jpg`;
+                uploadPromises.push(storageService.uploadBase64Image(images.front, 'rider-selfies', frontPath));
+            }
+            if (images?.back) {
+                const backPath = `kyc_${riderUuid}_back_${Date.now()}.jpg`;
+                uploadPromises.push(storageService.uploadBase64Image(images.back, 'rider-selfies', backPath));
+            }
+            if (selfie) {
+                const selfiePath = `kyc_${riderUuid}_selfie_${Date.now()}.jpg`;
+                uploadPromises.push(storageService.uploadBase64Image(selfie, 'rider-selfies', selfiePath));
+            }
+
+            const uploadedUrls = await Promise.all(uploadPromises);
+            console.log("Documents uploaded:", uploadedUrls);
+
+            // 2. Perform the final upsert to public.riders
             const { error } = await supabase
                 .from('riders')
                 .upsert({
@@ -65,15 +86,16 @@ const OnboardingKYCReview = () => {
                     phone_number: phoneNumber,
                     vehicle_model: vehicle_model,
                     vehicle_number: vehicle_number,
-                    selected_city: selected_city,
-                    selected_hub: selected_hub,
+                    zone_id: selected_zone_id,
+                    hub_id: selected_hub_id,
                     kyc_status: 'in_review',
+                    kyc_docs_url: uploadedUrls,
                     updated_at: new Date().toISOString()
                 }, { onConflict: 'id' });
 
             if (error) throw error;
 
-            // Update local auth state
+            // 3. Update local auth state
             login(riderUuid, fullName, "in_review");
 
             // Navigate to success page
@@ -84,13 +106,7 @@ const OnboardingKYCReview = () => {
 
         } catch (error: any) {
             console.error("Error submitting KYC. Full Error Object:", error);
-            if (error.message) console.error("Error Message:", error.message);
-            if (error.code) console.error("Error Code:", error.code);
-            if (error.details) console.error("Error Details:", error.details);
-            if (error.hint) console.error("Error Hint:", error.hint);
-            
             setIsSubmitting(false);
-            // In a real app, we'd show a toast here
         }
     };
 

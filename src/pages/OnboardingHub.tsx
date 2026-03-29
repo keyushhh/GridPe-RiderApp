@@ -15,25 +15,38 @@ interface Hub {
 const OnboardingHub: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
+    const state = location.state as { selected_zone_id?: string; selected_zone_name?: string };
+    
     const [hubs, setHubs] = useState<Hub[]>([]);
     const [selectedHub, setSelectedHub] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const selectedCity = location.state?.selected_city || 'Bangalore'; // Using selected_city to match the propagation state
+    const selectedZoneId = state?.selected_zone_id;
+    const selectedZoneName = state?.selected_zone_name || 'Your Zone';
 
     useEffect(() => {
-        const fetchHubs = async (lat: number, lng: number) => {
+        const fetchHubs = async () => {
+            if (!selectedZoneId) {
+                console.error('No zone_id found in onboarding state');
+                setLoading(false);
+                return;
+            }
+
             try {
-                const { data, error } = await supabase.rpc('get_nearby_hubs', {
-                    user_lat: lat,
-                    user_lng: lng,
-                    selected_city: selectedCity
-                });
+                const { data, error } = await supabase
+                    .from('hubs')
+                    .select('id, location_name, address')
+                    .eq('zone_id', selectedZoneId);
 
                 if (error) throw error;
                 if (data) {
-                    setHubs(data);
-                    if (data.length > 0) setSelectedHub(data[0].id);
+                    const mappedHubs = data.map(h => ({
+                        id: h.id,
+                        name: h.location_name,
+                        dist_meters: 1200 
+                    }));
+                    setHubs(mappedHubs);
+                    if (mappedHubs.length > 0) setSelectedHub(mappedHubs[0].id);
                 }
             } catch (err) {
                 console.error('Error fetching hubs:', err);
@@ -42,31 +55,11 @@ const OnboardingHub: React.FC = () => {
             }
         };
 
-        if ("geolocation" in navigator) {
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    fetchHubs(position.coords.latitude, position.coords.longitude);
-                },
-                (error) => {
-                    console.error("Error getting location:", error);
-                    // Fallback to a default location (e.g., center of city) if needed, 
-                    // or just fetch without user coords if RPC supports it.
-                    // For now, let's try with 0,0 or just handle error.
-                    fetchHubs(0, 0); 
-                }
-            );
-        } else {
-            fetchHubs(0, 0);
-        }
-    }, [selectedCity]);
+        fetchHubs();
+    }, [selectedZoneId]);
 
     const formatDistance = (meters: number) => {
         const km = meters / 1000;
-        if (km < 1) {
-            // If less than 1 KM, show as KM with 1 decimal if it's significant, 
-            // but the user specifically asked for "0.5 KM" format for 0.48 km.
-            return `${km.toFixed(1)} KM`;
-        }
         return `${km.toFixed(1)} KM`;
     };
 
@@ -74,9 +67,8 @@ const OnboardingHub: React.FC = () => {
         if (!selectedHub) return;
         navigate('/onboarding/guidelines', {
             state: {
-                ...location.state,
-                selected_city: selectedCity,
-                selected_hub: selectedHub // Matches the variable name but passed as key selected_hub if we want complete snake_case naming in state
+                ...state,
+                selected_hub_id: selectedHub 
             }
         });
     };

@@ -1,17 +1,24 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import successCheckIcon from "../assets/success-check.svg";
+import { useAuth } from "../hooks/useAuth";
 
 const OnboardingKYCSuccess = () => {
     const navigate = useNavigate();
+    const { kycStatus } = useAuth();
 
     useEffect(() => {
+        if (kycStatus === 'verified') {
+            navigate("/dashboard", { replace: true });
+            return;
+        }
+
         const timer = setTimeout(() => {
             navigate("/onboarding/identity-info");
         }, 30000); // 30 seconds
 
         return () => clearTimeout(timer);
-    }, [navigate]);
+    }, [navigate, kycStatus]);
 
     return (
         <div className="relative h-[100dvh] w-full flex flex-col items-center bg-white font-satoshi overflow-hidden">

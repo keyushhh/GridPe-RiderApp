@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 interface AuthContextType {
     riderUuid: string | null;
@@ -7,10 +8,21 @@ interface AuthContextType {
     kycStatus: string | null;
     email: string | null;
     avatar: string | null;
+    kycDocsUrl: string[] | null;
+    selectedCity: string | null;
+    selectedHub: string | null;
+    selectedZoneId: string | null;
+    selectedHubId: string | null;
+    selectedZoneName: string | null;
+    selectedHubName: string | null;
+    totalEarnings: number;
+    isOnline: boolean;
+    setIsOnline: (online: boolean) => void;
     setPhoneNumber: (phone: string | null) => void;
     updateEmail: (email: string | null) => void;
     updateAvatar: (avatar: string | null) => void;
     login: (uuid: string, fullName?: string | null, kycStatus?: string | null) => void;
+    refreshProfile: () => Promise<void>;
     logout: () => void;
     loading: boolean;
 }
@@ -24,7 +36,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [kycStatus, setKycStatus] = useState<string | null>(localStorage.getItem('rider_kyc_status'));
     const [email, setEmailState] = useState<string | null>(localStorage.getItem('rider_email'));
     const [avatar, setAvatarState] = useState<string | null>(localStorage.getItem('rider_avatar'));
+    const [kycDocsUrl, setKycDocsUrl] = useState<string[] | null>(JSON.parse(localStorage.getItem('rider_kyc_docs') || 'null'));
+    const [selectedCity, setSelectedCity] = useState<string | null>(localStorage.getItem('rider_selected_city'));
+    const [selectedHub, setSelectedHub] = useState<string | null>(localStorage.getItem('rider_selected_hub'));
+    const [selectedZoneId, setSelectedZoneId] = useState<string | null>(localStorage.getItem('rider_selected_zone_id'));
+    const [selectedHubId, setSelectedHubId] = useState<string | null>(localStorage.getItem('rider_selected_hub_id'));
+    const [selectedZoneName, setSelectedZoneName] = useState<string | null>(localStorage.getItem('rider_selected_zone_name'));
+    const [selectedHubName, setSelectedHubName] = useState<string | null>(localStorage.getItem('rider_selected_hub_name'));
+    const [totalEarnings, setTotalEarnings] = useState<number>(Number(localStorage.getItem('rider_earnings')) || 0);
+    const [isOnline, setIsOnlineState] = useState<boolean>(localStorage.getItem('rider_is_online') === 'true');
     const [loading, setLoading] = useState(true);
+
+    const setIsOnline = (online: boolean) => {
+        localStorage.setItem('rider_is_online', online.toString());
+        setIsOnlineState(online);
+    };
 
     const setPhoneNumber = (phone: string | null) => {
         if (phone) localStorage.setItem('rider_phone', phone);
@@ -44,25 +70,88 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setAvatarState(avatar);
     };
 
+    const refreshProfile = async () => {
+        if (!riderUuid) return;
+
+        try {
+            const { data, error } = await supabase
+                .from('riders')
+                .select('*, service_zones(id, zone_name), hubs(id, location_name)')
+                .eq('id', riderUuid)
+                .single();
+
+            if (error) {
+                console.error('Error refreshing profile:', error);
+                return;
+            }
+
+            if (data) {
+                // Sync Supabase data to local state & storage
+                if (data.full_name) {
+                    setFullName(data.full_name);
+                    localStorage.setItem('rider_kyc_name', data.full_name);
+                }
+                if (data.kyc_status) {
+                    setKycStatus(data.kyc_status);
+                    localStorage.setItem('rider_kyc_status', data.kyc_status);
+                }
+                if (data.total_earnings !== undefined) {
+                    setTotalEarnings(data.total_earnings);
+                    localStorage.setItem('rider_earnings', data.total_earnings.toString());
+                }
+                if (data.is_online !== undefined) {
+                    setIsOnlineState(data.is_online);
+                    localStorage.setItem('rider_is_online', data.is_online.toString());
+                }
+                if (data.kyc_docs_url) {
+                    setKycDocsUrl(data.kyc_docs_url);
+                    localStorage.setItem('rider_kyc_docs', JSON.stringify(data.kyc_docs_url));
+                }
+                if (data.selected_city) {
+                    setSelectedCity(data.selected_city);
+                    localStorage.setItem('rider_selected_city', data.selected_city);
+                }
+                if (data.selected_hub) {
+                    setSelectedHub(data.selected_hub);
+                    localStorage.setItem('rider_selected_hub', data.selected_hub);
+                }
+
+                // New Zone-Based Sync
+                if (data.zone_id) {
+                    setSelectedZoneId(data.zone_id);
+                    localStorage.setItem('rider_selected_zone_id', data.zone_id);
+                }
+                if (data.hub_id) {
+                    setSelectedHubId(data.hub_id);
+                    localStorage.setItem('rider_selected_hub_id', data.hub_id);
+                }
+                if (data.service_zones?.zone_name) {
+                    setSelectedZoneName(data.service_zones.zone_name);
+                    localStorage.setItem('rider_selected_zone_name', data.service_zones.zone_name);
+                }
+                if (data.hubs?.location_name) {
+                    setSelectedHubName(data.hubs.location_name);
+                    localStorage.setItem('rider_selected_hub_name', data.hubs.location_name);
+                }
+            }
+        } catch (err) {
+            console.error('Failed to sync profile with Supabase:', err);
+        }
+    };
+
     useEffect(() => {
-        const storedUuid = localStorage.getItem('rider_uuid');
-        const storedPhone = localStorage.getItem('rider_phone');
-        const storedName = localStorage.getItem('rider_kyc_name');
-        const storedStatus = localStorage.getItem('rider_kyc_status');
-        const storedEmail = localStorage.getItem('rider_email');
-        const storedAvatar = localStorage.getItem('rider_avatar');
+        const initAuth = async () => {
+            const storedUuid = localStorage.getItem('rider_uuid');
+            if (storedUuid) {
+                setRiderUuid(storedUuid);
+                // Trigger profile refresh from Supabase after initial load
+                await refreshProfile();
+            }
+            setLoading(false);
+        };
         
-        console.log('AuthProvider init:', { storedUuid, storedPhone, storedName, storedStatus, storedEmail, storedAvatar });
-        
-        if (storedUuid) setRiderUuid(storedUuid);
-        if (storedPhone) setPhoneNumberState(storedPhone);
-        if (storedName) setFullName(storedName);
-        if (storedStatus) setKycStatus(storedStatus);
-        if (storedEmail) setEmailState(storedEmail);
-        if (storedAvatar) setAvatarState(storedAvatar);
-        
-        setLoading(false);
-    }, []);
+        initAuth();
+    }, [riderUuid]);
 
     // Simulation: Auto-verify after 30 seconds
     useEffect(() => {
@@ -114,6 +203,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('rider_earnings');
         localStorage.removeItem('rider_email');
         localStorage.removeItem('rider_avatar');
+        localStorage.removeItem('rider_selected_city');
+        localStorage.removeItem('rider_selected_hub');
+        localStorage.removeItem('rider_selected_zone_id');
+        localStorage.removeItem('rider_selected_hub_id');
+        localStorage.removeItem('rider_selected_zone_name');
+        localStorage.removeItem('rider_selected_hub_name');
         
         // Reset all React state
         setRiderUuid(null);
@@ -122,12 +217,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setKycStatus(null);
         setEmailState(null);
         setAvatarState(null);
+        setTotalEarnings(0);
+        setIsOnlineState(false);
+        setSelectedCity(null);
+        setSelectedHub(null);
+        setSelectedZoneId(null);
+        setSelectedHubId(null);
+        setSelectedZoneName(null);
+        setSelectedHubName(null);
         
         console.log('User logged out, all state cleared.');
     };
 
     return (
-        <AuthContext.Provider value={{ riderUuid, phoneNumber, fullName, kycStatus, email, avatar, setPhoneNumber, updateEmail, updateAvatar, login, logout, loading }}>
+        <AuthContext.Provider value={{ 
+            riderUuid, 
+            phoneNumber, 
+            fullName, 
+            kycStatus, 
+            kycDocsUrl,
+            selectedCity,
+            selectedHub,
+            selectedZoneId,
+            selectedHubId,
+            selectedZoneName,
+            selectedHubName,
+            email, 
+            avatar, 
+            totalEarnings,
+            isOnline,
+            setIsOnline,
+            setPhoneNumber, 
+            updateEmail, 
+            updateAvatar, 
+            login, 
+            refreshProfile,
+            logout, 
+            loading 
+        }}>
             {children}
         </AuthContext.Provider>
     );

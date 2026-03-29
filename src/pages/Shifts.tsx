@@ -1,8 +1,10 @@
 import { useNavigate } from "react-router-dom";
 import trendUpIcon from "../assets/trend-up.svg";
+import { useAuth } from "../hooks/useAuth";
 
 const Shifts = () => {
     const navigate = useNavigate();
+    const { selectedHubName, selectedZoneName } = useAuth();
 
     return (
         <div className="relative h-[100dvh] w-full bg-white font-satoshi overflow-y-auto flex flex-col items-center pb-10">
@@ -42,7 +44,7 @@ const Shifts = () => {
                         Your Preffered Shift
                     </h3>
                     <p className="mt-[7px] text-[14px] font-medium text-black leading-none">
-                        9:00 PM - 11:00 PM (Kormangala Hub)
+                        9:00 PM - 11:00 PM ({selectedHubName || selectedZoneName || 'Primary'} Hub)
                     </p>
                 </div>
 
@@ -123,7 +125,6 @@ const Shifts = () => {
                 <div className="mt-[12px] w-[314px] flex flex-col">
                     <div className="relative h-[140px] w-full mt-2 mb-10">
                         {/* Vertical Grid Lines (Separators) - 7 lines, framing the START of each day column */}
-                        {/* NO line after Sunday. Height 164px ends 4px below labels. */}
                         <div className="absolute inset-0 pointer-events-none h-[164px]">
                             {Array.from({ length: 7 }).map((_, i) => (
                                 <div
@@ -137,7 +138,7 @@ const Shifts = () => {
                         {/* Y-Axis Labels & Grid Lines - 8 lines, 20px spacing */}
                         <div className="absolute inset-0 flex flex-col pointer-events-none">
                             {[
-                                { val: 9, pos: 0, label: null },   // 20px above 8h
+                                { val: 9, pos: 0, label: null },
                                 { val: 8, pos: 20, label: "8h" },
                                 { val: 7.33, pos: 40, label: null },
                                 { val: 6.66, pos: 60, label: null },
@@ -162,7 +163,7 @@ const Shifts = () => {
                             ))}
                         </div>
 
-                        {/* Avg Line (Green Dashed) - Distinct from 6h grid level (moved to ~6.5h = 70px from top) */}
+                        {/* Avg Line (Green Dashed) */}
                         <div
                             className="absolute left-0 right-0 border-t border-dashed border-[#27C840] z-20"
                             style={{ top: "70px" }}
@@ -185,9 +186,6 @@ const Shifts = () => {
                                 { day: "Sat", h: 8.5 },
                                 { day: "Sun", h: 0 }
                             ].map((item, idx) => {
-                                // Calculate bar height based on non-linear scale:
-                                // 0-6h: 60px (item.h * 10)
-                                // 6-8h: 60px ((item.h - 6) * 30)
                                 let barH = 0;
                                 if (item.h <= 6) {
                                     barH = item.h * 10;
@@ -243,8 +241,8 @@ const Shifts = () => {
                 <div className="flex flex-col gap-[6px]">
                     <h3 className="text-[14px] font-bold text-black">Most Active Hubs</h3>
                     {[
-                        { name: "Kormangala Hub", shifts: "8 Shifts", earnings: "₹960" },
-                        { name: "Indiranagar Hub", shifts: "3 Shifts", earnings: "₹280" }
+                        { name: `${selectedHubName || 'Primary'} Hub`, shifts: "8 Shifts", earnings: "₹960" },
+                        { name: `${selectedZoneName || 'Secondary'} Zone`, shifts: "3 Shifts", earnings: "₹280" }
                     ].map((hub, i) => (
                         <div key={i} className="flex justify-between items-center text-[14px] font-medium text-black">
                             <span className="flex-1">{hub.name}</span>

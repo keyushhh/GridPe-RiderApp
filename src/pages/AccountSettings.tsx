@@ -361,7 +361,7 @@ const AccountSettings = () => {
             else if (/Windows/i.test(ua)) model = "Windows PC";
             else if (/Macintosh/i.test(ua)) model = "MacBook";
 
-            let city = "Bangalore, India";
+            let city = "Unknown City";
 
             // Get Current City
             if ("geolocation" in navigator) {
@@ -371,7 +371,7 @@ const AccountSettings = () => {
                     });
                     const response = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${position.coords.latitude}&longitude=${position.coords.longitude}&localityLanguage=en`);
                     const data = await response.json();
-                    city = `${data.city || data.locality || "Bangalore"}, ${data.countryName || "India"}`;
+                    city = `${data.city || data.locality || "Unknown"}, ${data.countryName || ""}`;
                 } catch (error) {
                     console.error("Error fetching location:", error);
                 }

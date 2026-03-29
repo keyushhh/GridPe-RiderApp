@@ -5,37 +5,60 @@ import { useNavigate } from 'react-router-dom';
 
 import chevronDownIcon from '../assets/chevron-down-solid.svg';
 import locationIcon from '../assets/location.svg';
+import { supabase } from '../lib/supabase';
+
+interface ServiceZone {
+    zone_id: string;   // UUID from active_cities
+    city_name: string; // Text from active_cities
+}
 
 const WorkCity: React.FC = () => {
     const navigate = useNavigate();
     const mapRef = useRef<MapRef>(null);
     const [isOpen, setIsOpen] = useState(false);
-    const [selectedCity, setSelectedCity] = useState('Bangalore');
-    const [searchQuery, setSearchQuery] = useState('');
+    const [zones, setZones] = useState<ServiceZone[]>([]);
+    const [selectedZone, setSelectedZone] = useState<ServiceZone | null>(null);
+    const [loading, setLoading] = useState(true);
 
-    const cities = ['Shillong', 'Guwahati', 'Bangalore', 'Pune'];
-    const cityCoordinates: Record<string, { lng: number, lat: number }> = {
-        'Shillong': { lng: 91.8933, lat: 25.5788 },
-        'Guwahati': { lng: 91.7362, lat: 26.1445 },
-        'Bangalore': { lng: 77.5941, lat: 12.9716 },
-        'Pune': { lng: 73.8567, lat: 18.5204 }
-    };
-
-    const filteredCities = cities; // No search bar, show all for now
-
-    // Map settings
+    // Initial view state (defaults to Bangalore center)
     const [viewState, setViewState] = useState({
         longitude: 77.5946,
         latitude: 12.9716,
         zoom: 11
     });
 
+    useEffect(() => {
+        const fetchZones = async () => {
+            try {
+                // Fetch from active_cities view: zone_id (UUID), city_name (Text)
+                const { data, error } = await supabase
+                    .from('active_cities')
+                    .select('*')
+                    .order('city_name');
+
+                if (error) throw error;
+                if (data) {
+                    setZones(data);
+                    if (data.length > 0) {
+                        setSelectedZone(data[0]);
+                    }
+                }
+            } catch (err) {
+                console.error('Error fetching active cities:', err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchZones();
+    }, []);
+
     // Helper to clean city name string
     const cleanCityName = (name: string) => {
         return name
-            .replace(/^(North|South|East|West)\s+/i, '') // Strip directional prefixes
-            .replace(/\s*\(.*?\)$/, '') // Strip anything in parentheses like (Pt)
-            .replace(/\s+(District|City|Town|Village)$/i, '') // Strip generic location suffixes
+            .replace(/^(North|South|East|West)\s+/i, '')
+            .replace(/\s*\(.*?\)$/, '')
+            .replace(/\s+(District|City|Town|Village)$/i, '')
             .trim();
     };
 
@@ -62,17 +85,20 @@ const WorkCity: React.FC = () => {
                     try {
                         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10`);
                         const data = await res.json();
-                        // Prioritize city-level names over state
                         let city = data.address.city ||
                             data.address.town ||
                             data.address.municipality ||
                             data.address.village ||
                             data.address.suburb ||
                             data.address.county ||
-                            data.address.state;
+                            data.address.state || "Unknown City";
 
-                        if (city) {
-                            setSelectedCity(cleanCityName(city));
+                        if (city && zones.length > 0) {
+                            const cleaned = cleanCityName(city);
+                            const matchedZone = zones.find(z => z.city_name.toLowerCase().includes(cleaned.toLowerCase()));
+                            if (matchedZone) {
+                                setSelectedZone(matchedZone);
+                            }
                         }
                     } catch (err) {
                         console.error("Reverse geocoding failed:", err);
@@ -83,25 +109,12 @@ const WorkCity: React.FC = () => {
                 }
             );
         }
-    }, []);
+    }, [zones]);
 
-    const handleCitySelect = (city: string) => {
-        setSelectedCity(city);
+    const handleCitySelect = (zone: ServiceZone) => {
+        setSelectedZone(zone);
         setIsOpen(false);
-        const coords = cityCoordinates[city];
-        if (coords) {
-            mapRef.current?.flyTo({
-                center: [coords.lng, coords.lat],
-                zoom: 11,
-                duration: 2000
-            });
-
-            setViewState({
-                longitude: coords.lng,
-                latitude: coords.lat,
-                zoom: 11
-            });
-        }
+        // Map center stays on default or user's current location since view lacks city-specific coords
     };
 
     const cartoStyle = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
@@ -130,7 +143,7 @@ const WorkCity: React.FC = () => {
                         <div className="relative flex flex-col items-center">
                             <div className="h-[40px] px-[24px] bg-black rounded-full flex items-center justify-center min-w-[124px]">
                                 <span className="text-white text-[14px] font-normal leading-[21px]">
-                                    {selectedCity}
+                                    {selectedZone?.city_name || 'Loading...'}
                                 </span>
                             </div>
                             <div className="w-0 h-0 border-l-[11px] border-l-transparent border-r-[11px] border-r-transparent border-t-[11px] border-t-black mt-[-1px]" />
@@ -182,7 +195,7 @@ const WorkCity: React.FC = () => {
                     >
                         <img src={locationIcon} alt="location" className="w-[24px] h-[24px]" />
                         <span className="ml-[10px] text-[14px] font-medium text-black flex-1">
-                            {selectedCity}
+                            {selectedZone?.city_name || 'Select City'}
                         </span>
                         <img
                             src={chevronDownIcon}
@@ -201,18 +214,18 @@ const WorkCity: React.FC = () => {
                             </div>
                             <div className="w-full h-[1px] bg-[#e6e8eb]" />
                             <div className="flex-1 overflow-y-auto px-[16px]">
-                                {filteredCities.map((city, idx) => (
-                                    <div key={city}>
+                                {zones.map((zone, idx) => (
+                                    <div key={zone.zone_id}>
                                         <div
                                             className="flex items-center justify-between py-[10px] cursor-pointer"
-                                            onClick={() => handleCitySelect(city)}
+                                            onClick={() => handleCitySelect(zone)}
                                         >
-                                            <span className="text-[14px] font-medium text-black">{city}</span>
-                                            <div className={`w-[20px] h-[20px] rounded-full border-2 border-primary flex items-center justify-center ${selectedCity === city ? 'bg-primary' : ''}`}>
-                                                {selectedCity === city && <div className="w-[8px] h-[8px] bg-white rounded-full" />}
+                                            <span className="text-[14px] font-medium text-black">{zone.city_name}</span>
+                                            <div className={`w-[20px] h-[20px] rounded-full border-2 border-primary flex items-center justify-center ${selectedZone?.zone_id === zone.zone_id ? 'bg-primary' : ''}`}>
+                                                {selectedZone?.zone_id === zone.zone_id && <div className="w-[8px] h-[8px] bg-white rounded-full" />}
                                             </div>
                                         </div>
-                                        {idx < filteredCities.length - 1 && <div className="h-[1px] bg-[#e6e8eb]" />}
+                                        {idx < zones.length - 1 && <div className="h-[1px] bg-[#e6e8eb]" />}
                                     </div>
                                 ))}
                             </div>
@@ -221,7 +234,12 @@ const WorkCity: React.FC = () => {
                 </div>
 
                 <button
-                    onClick={() => navigate('/onboarding/vehicle', { state: { selected_city: selectedCity } })}
+                    onClick={() => navigate('/onboarding/vehicle', { 
+                        state: { 
+                            selected_zone_id: selectedZone?.zone_id,
+                            selected_zone_name: selectedZone?.city_name 
+                        } 
+                    })}
                     className="mt-[21px] mb-[40px] w-full max-w-[362px] h-[48px] bg-primary rounded-full flex items-center justify-center transition-opacity hover:opacity-90 active:scale-[0.98] shrink-0"
                 >
                     <span className="text-white text-[16px] font-medium">Continue</span>
