@@ -4,5 +4,10 @@
     "source.organizeImports": "explicit",
     "source.sortMembers": "explicit"
   },
-  "css.lint.unknownAtRules": "ignore"
+  "css.lint.unknownAtRules": "ignore",
+  "deno.enable": true,
+  "deno.unstable": [],
+  "deno.enablePaths": [
+    "supabase/functions"
+  ]
 }

@@ -20,7 +20,7 @@ interface AuthContextType {
     setIsOnline: (online: boolean) => void;
     setPhoneNumber: (phone: string | null) => void;
     updateEmail: (email: string | null) => void;
-    updateAvatar: (avatar: string | null) => void;
+    updateAvatar: (file: File) => Promise<string | null>;
     login: (uuid: string, fullName?: string | null, kycStatus?: string | null) => void;
     refreshProfile: () => Promise<void>;
     logout: () => void;
@@ -64,10 +64,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setEmailState(email);
     };
 
-    const updateAvatar = (avatar: string | null) => {
-        if (avatar) localStorage.setItem('rider_avatar', avatar);
-        else localStorage.removeItem('rider_avatar');
-        setAvatarState(avatar);
+    const updateAvatar = async (file: File) => {
+        if (!riderUuid) return null;
+
+        try {
+            const fileExt = file.name.split('.').pop() || 'jpg';
+            const filePath = `${riderUuid}/profile.${fileExt}`;
+
+            // Upload/Overwrite to Storage
+            const { error: uploadError } = await supabase.storage
+                .from('rider-profiles')
+                .upload(filePath, file, {
+                    upsert: true,
+                    cacheControl: '3600',
+                });
+
+            if (uploadError) throw uploadError;
+
+            // Get the public URL
+            const { data: { publicUrl } } = supabase.storage
+                .from('rider-profiles')
+                .getPublicUrl(filePath);
+
+            // Update profile_url in the riders table
+            const { error: dbError } = await supabase
+                .from('riders')
+                .update({ profile_url: publicUrl })
+                .eq('id', riderUuid);
+
+            if (dbError) throw dbError;
+
+            // Update local state and storage
+            setAvatarState(publicUrl);
+            localStorage.setItem('rider_avatar', publicUrl);
+
+            return publicUrl;
+        } catch (err) {
+            console.error('Error updating avatar:', err);
+            throw err;
+        }
     };
 
     const refreshProfile = async () => {
@@ -76,12 +111,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             const { data, error } = await supabase
                 .from('riders')
-                .select('*, service_zones(id, zone_name), hubs(id, location_name)')
+                .select('*, service_zones(id, name), hubs(id, location_name)')
                 .eq('id', riderUuid)
                 .single();
 
             if (error) {
                 console.error('Error refreshing profile:', error);
+
+                // Fallback for Web/Development: If rider is not in DB, set a default name
+                if (riderUuid === '00000000-0000-0000-0000-000000000001' || error.code === 'PGRST116') {
+                    setFullName('GridPe Rider');
+                    setKycStatus('pending');
+                }
                 return;
             }
 
@@ -115,6 +156,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setSelectedHub(data.selected_hub);
                     localStorage.setItem('rider_selected_hub', data.selected_hub);
                 }
+                if (data.profile_url) {
+                    setAvatarState(data.profile_url);
+                    localStorage.setItem('rider_avatar', data.profile_url);
+                }
 
                 // New Zone-Based Sync
                 if (data.zone_id) {
@@ -125,9 +170,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setSelectedHubId(data.hub_id);
                     localStorage.setItem('rider_selected_hub_id', data.hub_id);
                 }
-                if (data.service_zones?.zone_name) {
-                    setSelectedZoneName(data.service_zones.zone_name);
-                    localStorage.setItem('rider_selected_zone_name', data.service_zones.zone_name);
+                if (data.service_zones && (data.service_zones as any).name) {
+                    const zName = (data.service_zones as any).name;
+                    setSelectedZoneName(zName);
+                    localStorage.setItem('rider_selected_zone_name', zName);
                 }
                 if (data.hubs?.location_name) {
                     setSelectedHubName(data.hubs.location_name);
@@ -209,6 +255,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('rider_selected_hub_id');
         localStorage.removeItem('rider_selected_zone_name');
         localStorage.removeItem('rider_selected_hub_name');
+        localStorage.removeItem('rider_bank_accounts');
         
         // Reset all React state
         setRiderUuid(null);

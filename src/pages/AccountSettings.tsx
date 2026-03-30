@@ -38,12 +38,35 @@ import qrCodeImg from "../assets/trial-qr.png";
 import verifiedBadge from "../assets/verified-badge.svg";
 import walletIcon from "../assets/wallet.svg";
 import AccountSelectionList from "../components/AccountSelectionList";
+import ManualBankForm from "../components/ManualBankForm";
 import PasskeyBottomSheet from "../components/PasskeyBottomSheet";
 import SupportStatusBottomSheet, { SupportStatusStep } from "../components/SupportStatusBottomSheet";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../context/ToastContext";
 import { getBankLogo } from "../utils/BankLogoMap";
 import { supabase } from "../lib/supabase";
+import NetInfo from '@react-native-community/netinfo';
+import { getCarrierMetadata } from "../utils/CarrierMapping";
+// @ts-ignore - Only available in native environment
+import SimCardsManager from 'react-native-sim-cards-manager';
+// @ts-ignore - Only available in native environment
+import { Linking, Platform } from 'react-native';
+
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
+
+const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.body.appendChild(script);
+    });
+};
 
 // Helper component for swipe-to-delete
 const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any) => {
@@ -52,18 +75,16 @@ const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any)
     const startX = useRef(0);
     const maxSwipe = -80;
 
-    const onTouchStart = (e: React.TouchEvent) => {
-        if (index === 0) return; // Primary account is not swipeable
-        startX.current = e.touches[0].clientX;
+    const onDragStart = (clientX: number) => {
+        startX.current = clientX;
         setIsDragging(true);
     };
 
-    const onTouchMove = (e: React.TouchEvent) => {
-        if (index === 0 || !isDragging) return;
-        const currentX = e.touches[0].clientX;
-        const deltaX = currentX - startX.current;
+    const onDragMove = (clientX: number) => {
+        if (!isDragging) return;
+        const deltaX = clientX - startX.current;
 
-        // Only allow left swipe
+        // Reveal delete button on the right by swiping left
         if (deltaX < 0) {
             setSwipeX(Math.max(deltaX, maxSwipe));
         } else {
@@ -71,8 +92,8 @@ const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any)
         }
     };
 
-    const onTouchEnd = () => {
-        if (index === 0) return;
+    const onDragEnd = () => {
+        if (!isDragging) return;
         setIsDragging(false);
         if (swipeX < -40) {
             setSwipeX(maxSwipe);
@@ -81,12 +102,21 @@ const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any)
         }
     };
 
+    const onTouchStart = (e: React.TouchEvent) => onDragStart(e.touches[0].clientX);
+    const onTouchMove = (e: React.TouchEvent) => onDragMove(e.touches[0].clientX);
+    const onTouchEnd = () => onDragEnd();
+
+    const onMouseDown = (e: React.MouseEvent) => onDragStart(e.clientX);
+    const onMouseMove = (e: React.MouseEvent) => onDragMove(e.clientX);
+    const onMouseUp = () => onDragEnd();
+    const onMouseLeave = () => onDragEnd();
+
     const logoUrl = getBankLogo(acc.bankName);
 
     return (
         <div className={`relative w-[362px] h-auto overflow-hidden rounded-[16px] border border-[#E9EAEB] bg-white`}>
             {/* Delete Background - Only on the right and only when swiped */}
-            {index !== 0 && swipeX < 0 && (
+            {swipeX < 0 && (
                 <div
                     className="absolute inset-y-0 right-0 w-[80px] bg-[#FF3B30] flex items-center justify-center cursor-pointer z-0"
                     onClick={() => onDelete(acc.id)}
@@ -100,11 +130,15 @@ const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any)
 
             {/* Foreground Card Content */}
             <div
-                className="w-full h-auto p-[16px] bg-white flex flex-col relative transition-transform duration-200 ease-out z-10"
+                className={`w-full h-auto p-[16px] bg-white flex flex-col relative transition-transform duration-200 ease-out z-10 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
                 style={{ transform: `translateX(${swipeX}px)` }}
                 onTouchStart={onTouchStart}
                 onTouchMove={onTouchMove}
                 onTouchEnd={onTouchEnd}
+                onMouseDown={onMouseDown}
+                onMouseMove={onMouseMove}
+                onMouseUp={onMouseUp}
+                onMouseLeave={onMouseLeave}
             >
                 <div className="flex items-center gap-[12px]">
                     <div className="w-[36px] h-[36px] flex items-center justify-center">
@@ -135,6 +169,7 @@ const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any)
 };
 
 const AccountSettings = () => {
+    const isDevelopment = process.env.NODE_ENV === 'development' && Platform.OS === 'web';
     const navigate = useNavigate();
     const location = useLocation();
     const { phoneNumber, logout, kycStatus, fullName, email, avatar, updateAvatar, riderUuid } = useAuth();
@@ -142,12 +177,11 @@ const AccountSettings = () => {
     const [activeTab, setActiveTab] = useState(location.state?.activeTab || "Home");
     const [loginDevices, setLoginDevices] = useState<{ id: number, model: string, city: string, lastActive: string, app: string }[]>([]);
     const [kycDoc, setKycDoc] = useState({ type: 'aadhar', label: 'Aadhar Card', number: 'XXXX 4242' });
-    const [bankingStep, setBankingStep] = useState<'list' | 'add_wifi' | 'validate_sim' | 'verifying_sim' | 'linked_accounts' | 'add_form' | 'success'>('list');
+    const [bankingStep, setBankingStep] = useState<'list' | 'add_wifi' | 'validate_sim' | 'verifying_sim' | 'linked_accounts' | 'add_form' | 'verifying_bank' | 'success'>('list');
+    const [isManualSubmitting, setIsManualSubmitting] = useState(false);
+    const [checkingBankAccountId, setCheckingBankAccountId] = useState<string | null>(null);
     const [selectedAccount, setSelectedAccount] = useState<any>(null);
-    const [addedAccounts, setAddedAccounts] = useState<any[]>(() => {
-        const saved = localStorage.getItem('rider_bank_accounts');
-        return saved ? JSON.parse(saved) : [];
-    });
+    const [addedAccounts, setAddedAccounts] = useState<any[]>([]);
     const [successfullyLinkedBank, setSuccessfullyLinkedBank] = useState<string | null>(null);
     const [securityStep, setSecurityStep] = useState<'list' | 'passkeys' | 'authenticator' | 'authenticator_otp' | 'two_step_intro' | 'two_step_email' | 'two_step_otp' | 'two_step_method' | 'two_step_phone' | 'two_step_phone_otp' | 'two_step_backup_codes' | 'two_step_dashboard'>('list');
     const [isAuthenticatorActive, setIsAuthenticatorActive] = useState(false);
@@ -168,6 +202,8 @@ const AccountSettings = () => {
     const [isSuccessPopupOpen, setIsSuccessPopupOpen] = useState(false);
     const [accountToDelete, setAccountToDelete] = useState<any>(null);
     const [dynamicRiderId, setDynamicRiderId] = useState<string>("Loading...");
+    const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+    const [selectedSimPhoneNumber, setSelectedSimPhoneNumber] = useState<string>("");
 
     // Persistence Logic
     useEffect(() => {
@@ -203,13 +239,40 @@ const AccountSettings = () => {
         });
         setBackupCodes(newCodes);
     };
+
+    const fetchBankAccounts = async () => {
+        if (!riderUuid) return;
+        try {
+            const { data, error } = await supabase
+                .from('rider_bank_accounts')
+                .select('*')
+                .eq('rider_id', riderUuid)
+                .order('created_at', { ascending: false });
+            
+            if (error) throw error;
+            
+            if (data) {
+                const mapped = data.map(acc => ({
+                    id: acc.id,
+                    bankName: acc.bank_name,
+                    accountNumber: acc.account_number_masked,
+                    accountHolderName: acc.account_holder_name,
+                    isPrimary: acc.is_primary ?? false
+                }));
+                setAddedAccounts(mapped);
+            }
+        } catch (err) {
+            console.error('Error fetching bank accounts:', err);
+        }
+    };
+
     const [showPasskeySheet, setShowPasskeySheet] = useState(false);
     const [verificationState, setVerificationState] = useState<'loading' | 'error' | 'success'>('loading');
     const [selectedSim, setSelectedSim] = useState(1);
     // For testing: change simCards count to 1 or 2 as needed
-    const [simCards] = useState([
-        { id: 1, label: 'SIM 1', carrier: 'Airtel', logo: airtelLogo },
-        { id: 2, label: 'SIM 2 (eSIM)', carrier: 'Jio', logo: jioLogo }
+    const [simCards, setSimCards] = useState([
+        { id: 1, label: 'SIM 1', carrier: 'Airtel', logo: airtelLogo, phoneNumber: "+91 9876543210" },
+        { id: 2, label: 'SIM 2 (eSIM)', carrier: 'Jio', logo: jioLogo, phoneNumber: "+91 8787311620" }
     ]);
     const [isSupportStatusOpen, setIsSupportStatusOpen] = useState(false);
     const [selectedTicket, setSelectedTicket] = useState<{ id: string, title: string, amount?: string } | null>(null);
@@ -239,6 +302,148 @@ const AccountSettings = () => {
         status: "In Progress"
     });
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isWifiEnabled, setIsWifiEnabled] = useState(false);
+
+    // Polling for Bank Verification Status
+    useEffect(() => {
+        let pollTimer: NodeJS.Timeout;
+        
+        const pollStatus = async () => {
+            if (bankingStep !== 'verifying_bank' || !riderUuid) return;
+            
+            try {
+                const { data, error } = await supabase
+                    .from('bank_verification_status')
+                    .select('status, bank_name')
+                    .eq('rider_id', riderUuid)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .single();
+                
+                if (error) {
+                    console.error('Polling error:', error);
+                } else if (data?.status === 'verified') {
+                    setSuccessfullyLinkedBank(data.bank_name);
+                    // Refresh the list immediately
+                    await fetchBankAccounts();
+                    setBankingStep('success');
+                    
+                    // Automatically transition to list after 2 seconds
+                    setTimeout(() => {
+                        setBankingStep('list');
+                    }, 2000);
+                    return;
+                }
+            } catch (err) {
+                console.error('Unexpected error during polling:', err);
+            }
+            
+            pollTimer = setTimeout(pollStatus, 3000);
+        };
+        
+        if (bankingStep === 'verifying_bank') {
+            pollStatus();
+        }
+        
+        return () => {
+            if (pollTimer) clearTimeout(pollTimer);
+        };
+    }, [bankingStep, riderUuid]);
+
+    // Initial Fetch for Bank Accounts
+    useEffect(() => {
+        if (activeTab === "Banking") {
+            fetchBankAccounts();
+        }
+    }, [activeTab, riderUuid]);
+
+    // Network & SIM Real-time Monitoring
+    useEffect(() => {
+        const unsubscribe = NetInfo.addEventListener(state => {
+            const wifi = state.type === 'wifi';
+            setIsWifiEnabled(wifi);
+            
+            // Real-time auto-progression: WiFi toggled off while on "add_wifi" step
+            if (activeTab === "Banking" && bankingStep === "add_wifi" && !wifi && state.isConnected) {
+                setBankingStep("validate_sim");
+            }
+        });
+        return () => unsubscribe();
+    }, [activeTab, bankingStep]);
+
+    // Native SIM Fetching
+    useEffect(() => {
+        if (activeTab === "Banking" && bankingStep === "validate_sim") {
+            const fetchSims = async () => {
+                try {
+                    if (isDevelopment) {
+                        const mockSims = [
+                            { carrierName: 'Airtel', mcc: '404', mnc: '45', slot: 1, phoneNumber: "+91 9876543210" },
+                            { carrierName: 'Jio', mcc: '405', mnc: '840', slot: 2, isEsim: true, phoneNumber: "+91 8787311620" }
+                        ];
+                        const mappedSims = mockSims.map((sim, index) => {
+                            const metadata = getCarrierMetadata(sim.mcc, sim.mnc, sim.carrierName);
+                            return {
+                                id: index + 1,
+                                label: `SIM ${index + 1}${sim.isEsim ? ' (eSIM)' : ''}`,
+                                carrier: metadata.displayName,
+                                logo: metadata.logo,
+                                phoneNumber: sim.phoneNumber
+                            };
+                        });
+                        setSimCards(mappedSims);
+                        setSelectedSim(mappedSims[0].id);
+                        setSelectedSimPhoneNumber(mappedSims[0].phoneNumber);
+                        return;
+                    }
+
+                    // Check if we're in a native environment
+                    const isNative = typeof window !== 'undefined' && ((window as any).ReactNative || (window as any).NativeModules);
+                    if (!isNative) return; // Fallback to mock
+
+                    const sims = await SimCardsManager.getSimCards();
+                    if (sims && sims.length > 0) {
+                        const mappedSims = sims.map((sim: any, index: number) => {
+                            const metadata = getCarrierMetadata(sim.mcc, sim.mnc, sim.carrierName);
+                            return {
+                                id: index + 1,
+                                label: `SIM ${index + 1}${sim.isEsim ? ' (eSIM)' : ''}`,
+                                carrier: metadata.displayName,
+                                logo: metadata.logo,
+                                phoneNumber: sim.phoneNumber || ""
+                            };
+                        });
+                        setSimCards(mappedSims);
+                        setSelectedSim(mappedSims[0].id);
+                        setSelectedSimPhoneNumber(mappedSims[0].phoneNumber || "");
+                    }
+                } catch (err) {
+                    console.error('SIM fetch failed:', err);
+                }
+            };
+            fetchSims();
+        }
+    }, [activeTab, bankingStep, isDevelopment]);
+
+    const handleTurnOffWifi = async () => {
+        try {
+            // Check for native environment
+            if (typeof window !== 'undefined' && (window as any).ReactNative || (window as any).NativeModules) {
+                if (Platform.OS === 'android') {
+                    await Linking.sendIntent('android.settings.WIRELESS_SETTINGS');
+                } else if (Platform.OS === 'ios') {
+                    await Linking.openURL('App-Prefs:root=WIFI');
+                }
+            } else {
+                // Mock behavior for web
+                setBankingStep("validate_sim");
+            }
+        } catch (err) {
+            console.error('Failed to open WiFi settings:', err);
+            // Fallback for web or dev
+            setBankingStep("validate_sim");
+        }
+    };
 
     useEffect(() => {
         const fetchRiderId = async () => {
@@ -323,18 +528,22 @@ const AccountSettings = () => {
         }, 3000);
     };
 
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (file) {
             // Check if file is jpg, jpeg, or png
             const allowedTypes = ["image/jpeg", "image/jpg", "image/png"];
             if (allowedTypes.includes(file.type)) {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    const base64String = reader.result as string;
-                    updateAvatar(base64String);
-                };
-                reader.readAsDataURL(file);
+                setIsUploadingAvatar(true);
+                try {
+                    await updateAvatar(file);
+                    showToast("Profile photo updated successfully!", "success");
+                } catch (err) {
+                    console.error('Upload failed:', err);
+                    showToast("Failed to upload profile photo. Please try again.", "error");
+                } finally {
+                    setIsUploadingAvatar(false);
+                }
             } else {
                 alert("Only JPG, JPEG, and PNG formats are allowed.");
             }
@@ -423,17 +632,34 @@ const AccountSettings = () => {
         }
     };
 
-    const confirmDelete = () => {
+    const confirmDelete = async () => {
         if (accountToDelete) {
-            setAddedAccounts(prev => prev.filter(acc => acc.id !== accountToDelete.id));
+            const accountId = accountToDelete.id;
+            const previousAccounts = [...addedAccounts];
+
+            // 1. Optimistic UI update
+            setAddedAccounts(prev => prev.filter(acc => acc.id !== accountId));
             setIsDeletePopupOpen(false);
-            showToast("Bank account has been successfully removed.", "delete");
+
+            try {
+                // 2. Persistent Delete from Supabase
+                const { error } = await supabase
+                    .from('rider_bank_accounts')
+                    .delete()
+                    .eq('id', accountId);
+                
+                if (error) throw error;
+                showToast("Bank account has been successfully removed.", "delete");
+            } catch (err) {
+                console.error('Error deleting account:', err);
+                // 3. Rollback on failure
+                setAddedAccounts(previousAccounts);
+                showToast("Failed to delete the bank account. Please try again.", "error");
+            }
         }
     };
 
-    useEffect(() => {
-        localStorage.setItem('rider_bank_accounts', JSON.stringify(addedAccounts));
-    }, [addedAccounts]);
+    const isPrimaryAccount = addedAccounts[0]?.id === accountToDelete?.id;
 
     useEffect(() => {
         if (bankingStep === "verifying_sim") {
@@ -683,16 +909,21 @@ const AccountSettings = () => {
                         </div>
 
                         {/* Avatar and Upload Row: 25px below header */}
-                        <div className="mt-[25px] flex items-center w-full">
+                        <div className="mt-[25px] flex items-center justify-between w-full">
                             <div className="w-[83px] h-[83px] rounded-full border border-gray-100 overflow-hidden shrink-0">
                                 <img src={currentAvatar} alt="Avatar" className="w-full h-full object-cover" />
                             </div>
 
                             <button
-                                className="mt-[18px] w-full h-[40px] rounded-full border border-[#E9EAEB] flex items-center justify-center transition-colors active:bg-[#F7F8FA]"
+                                className="w-[109px] h-[32px] rounded-full bg-black text-white text-[12px] font-medium flex items-center justify-center transition-transform active:scale-95 disabled:bg-black/70"
                                 onClick={handleUploadButtonClick}
+                                disabled={isUploadingAvatar}
                             >
-                                Upload Photo
+                                {isUploadingAvatar ? (
+                                    <div className="w-[14px] h-[14px] border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                ) : (
+                                    "Upload Photo"
+                                )}
                             </button>
                             <input
                                 type="file"
@@ -1767,7 +1998,7 @@ const AccountSettings = () => {
                                 {/* Description: 18px below */}
                                 <p className="mt-[18px] text-black font-medium text-[14px] leading-tight text-left shrink-0">
                                     {addedAccounts.length > 0
-                                        ? "Manage your bank accounts here. Your primary account will be used for all payouts. Primary bank accounts cannot be deleted, as it is required for your Payout."
+                                        ? "Manage your bank accounts here. Your primary account will be used for all payouts."
                                         : "You don't have any bank accounts added yet. Please add a bank account, this is the account where you will receive your payouts. So make sure all the details entered are correct."
                                     }
                                 </p>
@@ -1825,7 +2056,7 @@ const AccountSettings = () => {
                                             We need to verify this device with your phone number. Please turn off your 'WiFi' and stay connected through mobile data.
                                         </p>
                                         <button
-                                            onClick={() => setBankingStep("validate_sim")}
+                                            onClick={handleTurnOffWifi}
                                             className="w-[322px] h-[48px] bg-black text-white rounded-full font-medium text-[16px] flex items-center justify-center cursor-pointer active:scale-[0.98] transition-transform"
                                         >
                                             Turn off WiFi
@@ -1852,7 +2083,10 @@ const AccountSettings = () => {
                                         {simCards.map((sim) => (
                                             <button
                                                 key={sim.id}
-                                                onClick={() => setSelectedSim(sim.id)}
+                                                onClick={() => {
+                                                    setSelectedSim(sim.id);
+                                                    setSelectedSimPhoneNumber(sim.phoneNumber);
+                                                }}
                                                 className={`flex-1 h-[104px] rounded-[16px] border flex flex-col p-[12px] relative transition-all text-left
                                                     ${selectedSim === sim.id ? 'border-[#5260FE] bg-white ring-1 ring-[#5260FE]' : 'border-[#E9EAEB] bg-white'}
                                                 `}
@@ -1876,14 +2110,23 @@ const AccountSettings = () => {
                                     <div className="mt-[16px] w-full p-[16px] bg-[#F9F9F9] rounded-[12px] border border-[#F0F0F0]">
                                         <pre className="text-black font-medium text-[14px] font-sans leading-normal">
                                             DPREG{"\n"}
-                                            9ab12cde-34f5-4a1b-8c7d-92f4e8bb12ef{"\n"}
-                                            9898989898
+                                            {riderUuid || "9ab12cde-34f5-4a1b-8c7d-92f4e8bb12ef"}{"\n"}
+                                            {selectedSimPhoneNumber?.replace("+91 ", "") || "9898989898"}
                                         </pre>
                                     </div>
                                 </div>
                                 <div className="flex-1 min-h-[40px]" />
                                 <button
-                                    onClick={() => setBankingStep("verifying_sim")}
+                                    onClick={() => {
+                                        setBankingStep("verifying_sim");
+                                        if (Platform.OS === 'web') {
+                                            setVerificationState("loading");
+                                            setTimeout(() => {
+                                                setVerificationState("success");
+                                                showToast("Device verified successfully", "success");
+                                            }, 3000);
+                                        }
+                                    }}
                                     className="w-[362px] h-[48px] bg-black text-white rounded-full font-medium text-[16px] flex items-center justify-center cursor-pointer active:scale-[0.98] transition-transform mb-8 self-center"
                                 >
                                     Verify
@@ -1955,20 +2198,81 @@ const AccountSettings = () => {
                                 )}
                             </>
                         ) : bankingStep === "linked_accounts" ? (
-                            <AccountSelectionList
-                                phoneNumber={riderMobile || "+91 8787311620"}
-                                addedBankNames={addedAccounts.map(a => a.bankName)}
-                                onSelect={(acc) => {
-                                    setSelectedAccount(acc);
-                                }}
-                                onProceed={(acc) => {
-                                    // Normally this would fetch details, but for now we just add it
-                                    setAddedAccounts(prev => [...prev, acc]);
-                                    setSuccessfullyLinkedBank(acc.bankName);
-                                    showToast(`${acc.bankName} has been successfully added.`, "success");
-                                    setBankingStep("success");
+                            <ManualBankForm
+                                phoneNumber={selectedSimPhoneNumber || phoneNumber || "+91 8787311620"}
+                                riderName={fullName || "Rider"}
+                                isSubmitting={isManualSubmitting}
+                                onProceed={async (bankData: { accountHolderName: string; bankName: string; accountNumber: string; ifscCode: string }) => {
+                                    setIsManualSubmitting(true);
+                                    
+                                    try {
+                                        // 1. Trigger the create-verification-order Edge Function
+                                        const { data: rpcData, error: rpcError } = await supabase.functions.invoke('create-verification-order', {
+                                            body: {
+                                                account_holder_name: bankData.accountHolderName,
+                                                bank_name: bankData.bankName,
+                                                account_number: bankData.accountNumber,
+                                                ifsc_code: bankData.ifscCode,
+                                                rider_id: riderUuid
+                                            }
+                                        });
+                                        
+                                        if (rpcError) throw new Error(rpcError.message);
+                                        
+                                        // 2. Load and Open Razorpay Checkout
+                                        const scriptLoaded = await loadRazorpayScript();
+                                        if (!scriptLoaded) throw new Error("Failed to load payment gateway");
+                                        
+                                        const options = {
+                                            key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+                                            amount: rpcData.order.amount,
+                                            currency: rpcData.order.currency,
+                                            name: "GridPe Rider",
+                                            description: "Bank Account Verification",
+                                            order_id: rpcData.order.id,
+                                            handler: (response: any) => {
+                                                // Success: Start polling
+                                                setCheckingBankAccountId(rpcData.accountId);
+                                                setBankingStep("verifying_bank");
+                                                setIsManualSubmitting(false);
+                                            },
+                                            modal: {
+                                                ondismiss: () => {
+                                                    setIsManualSubmitting(false);
+                                                    showToast("Verification cancelled. Please complete the ₹1 payment to link your account.", "error");
+                                                }
+                                            },
+                                            prefill: {
+                                                name: fullName || "Rider",
+                                                contact: selectedSimPhoneNumber || phoneNumber
+                                            },
+                                            theme: { color: "#000000" }
+                                        };
+                                        
+                                        const rzp = new (window as any).Razorpay(options);
+                                        rzp.open();
+                                        
+                                    } catch (err: any) {
+                                        console.error('Penny Drop Error:', err);
+                                        showToast(err.message || "Failed to initiate verification", "error");
+                                        setIsManualSubmitting(false);
+                                    }
                                 }}
                             />
+                        ) : bankingStep === "verifying_bank" ? (
+                            <>
+                                {/* Verifying with Bank Screen */}
+                                <h2 className="mt-[19px] text-black font-bold text-[22px] leading-tight text-left shrink-0">
+                                    Bank Accounts
+                                </h2>
+                                <div className="mt-20 flex flex-col items-center justify-center w-full">
+                                    <div className="w-[48px] h-[48px] border-4 border-black/10 border-t-black rounded-full animate-spin mb-6" />
+                                    <h3 className="text-black font-bold text-[18px]">Verifying with Bank...</h3>
+                                    <p className="mt-2 text-black/60 text-[14px] text-center max-w-[280px]">
+                                        We are confirming your details with the bank. This may take a moment.
+                                    </p>
+                                </div>
+                            </>
                         ) : bankingStep === "success" ? (
                             <>
                                 {/* Success View */}
@@ -2099,7 +2403,10 @@ const AccountSettings = () => {
                                     <h2 className="text-black font-bold text-[18px] leading-tight">Delete Bank Account?</h2>
                                 </div>
                                 <p className="text-black font-medium text-[16px] leading-[1.3]">
-                                    Are you sure you want to delete this bank account ending with XXXX 0960?
+                                    {accountToDelete?.isPrimary 
+                                        ? "Are you sure you want to delete your Primary bank accoount? Your payouts will fail without a primary bank account."
+                                        : `Are you sure you want to delete this bank account ending with ${accountToDelete?.accountNumber || "XXXX 0960"}?`
+                                    }
                                 </p>
                             </div>
 
