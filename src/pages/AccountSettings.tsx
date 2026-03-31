@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import authenticatorIcon from "../assets/authenticator.svg";
 import avatarImg from "../assets/avatar.png";
@@ -213,12 +213,77 @@ const AccountSettings = () => {
     const [fromDashboard, setFromDashboard] = useState(false);
     const [isSettingUpSms, setIsSettingUpSms] = useState(false);
     const [isRegeneratingCodes, setIsRegeneratingCodes] = useState(false);
+    const [privacyStep, setPrivacyStep] = useState<'list' | 'policy' | 'terms'>('list');
+    const [legalCache, setLegalCache] = useState<Record<string, { body: string, updatedAt: string }>>({});
+    const [legalContent, setLegalContent] = useState<string | null>(null);
+    const [lastUpdated, setLastUpdated] = useState<string>("02 August, 2025"); // Fallback
+    const [isLegalLoading, setIsLegalLoading] = useState(false);
 
     useEffect(() => {
         if (activeTab === "Personal Info" || activeTab === "Security" || activeTab === "Home") {
             refreshProfile();
         }
     }, [activeTab]);
+
+    const fetchLegalContent = useCallback(async (type: string) => {
+        const contentType = type === 'policy' ? 'privacy_policy' : 'terms_conditions';
+        
+        // 1. Check Cache
+        if (legalCache[contentType]) {
+            setLegalContent(legalCache[contentType].body);
+            setLastUpdated(legalCache[contentType].updatedAt);
+            return;
+        }
+
+        // 2. Fetch from Supabase
+        setIsLegalLoading(true);
+        console.log(`[Legal] Fetching ${contentType}...`);
+        try {
+            const { data, error } = await supabase
+                .from('rider_legal_content')
+                .select('*')
+                .eq('content_type', contentType)
+                .eq('is_active', true)
+                .order('updated_at', { ascending: false })
+                .maybeSingle();
+
+            if (error) {
+                console.error(`[Legal] Supabase Error for ${contentType}:`, error);
+                throw error;
+            }
+
+            console.log(`[Legal] Data received for ${contentType}:`, data);
+
+            if (data) {
+                const formattedDate = new Date(data.updated_at).toLocaleDateString('en-GB', {
+                    day: '2-digit',
+                    month: 'long',
+                    year: 'numeric'
+                });
+                setLegalContent(data.content_body);
+                setLastUpdated(formattedDate);
+                
+                // Update Cache
+                setLegalCache(prev => ({
+                    ...prev,
+                    [contentType]: { body: data.content_body, updatedAt: formattedDate }
+                }));
+            } else {
+                setLegalContent(null);
+            }
+        } catch (err) {
+            console.error(`Failed to fetch ${contentType}:`, err);
+            setLegalContent(null);
+        } finally {
+            setIsLegalLoading(false);
+        }
+    }, [legalCache]);
+
+    useEffect(() => {
+        if (activeTab === "Privacy & Data" && (privacyStep === "policy" || privacyStep === "terms")) {
+            fetchLegalContent(privacyStep);
+        }
+    }, [activeTab, privacyStep, fetchLegalContent]);
 
     // Fetch TOTP secret when entering authenticator setup step
     useEffect(() => {
@@ -795,7 +860,9 @@ const AccountSettings = () => {
         }
     };
 
-    const isScrollable = activeTab !== "Security" || loginDevices.length >= 2;
+    const isScrollable = (activeTab !== "Security" && activeTab !== "Privacy & Data") || 
+                        (activeTab === "Security" && loginDevices.length >= 2) ||
+                        (activeTab === "Privacy & Data" && privacyStep === 'list');
 
     return (
         <div className={`relative w-[393px] h-screen bg-[#F5F5F5] font-satoshi flex flex-col items-center ${isScrollable ? 'overflow-y-auto' : 'overflow-hidden'}`}>
@@ -819,6 +886,10 @@ const AccountSettings = () => {
                             } else {
                                 setSecurityStep("list");
                             }
+                            return;
+                        }
+                        if (activeTab === "Privacy & Data" && (privacyStep === "policy" || privacyStep === "terms")) {
+                            setPrivacyStep("list");
                             return;
                         }
                         if (activeTab === "Banking") {
@@ -852,7 +923,9 @@ const AccountSettings = () => {
 
                 <div className="flex-1 flex justify-center mr-[32px]">
                     <h1 className="text-black text-[22px] font-medium leading-none">
-                        Account Settings
+                        {activeTab === "Privacy & Data" && privacyStep === "policy" ? "Privacy Policy" : 
+                         activeTab === "Privacy & Data" && privacyStep === "terms" ? "Terms & Conditions" : 
+                         "Account Settings"}
                     </h1>
                 </div>
             </div>
@@ -2072,73 +2145,117 @@ const AccountSettings = () => {
 
                 {activeTab === "Privacy & Data" && (
                     <div className="w-full flex flex-col items-start px-0">
-                        {/* Icon and Title Row: 19px below slider menu */}
-                        <div className="mt-[19px] flex items-center shrink-0">
-                            <img src={privacyDataIcon} alt="Privacy" className="w-[24px] h-[24px]" />
-                            <h2 className="ml-[12px] text-black font-bold text-[22px] leading-tight text-left">
-                                Privacy & Data
-                            </h2>
-                        </div>
-
-                        {/* Privacy Section: 18px below */}
-                        <h2 className="mt-[18px] text-black font-bold text-[22px] leading-tight text-left shrink-0">
-                            Privacy
-                        </h2>
-
-                        {/* Privacy Rows: 19px below heading */}
-                        <div className="mt-[19px] w-full flex flex-col gap-[22px] shrink-0">
-                            {/* Privacy Centre */}
-                            <div className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform">
-                                <div className="flex flex-col items-start text-left">
-                                    <span className="text-black font-medium text-[14px] leading-tight text-left">Privacy Centre</span>
-                                    <span className="mt-[2px] text-black/50 font-medium text-[12px] leading-tight text-left">
-                                        Take control of your privacy and learn how we protect it.
-                                    </span>
+                        {privacyStep === "list" ? (
+                            <>
+                                {/* Icon and Title Row: 19px below slider menu */}
+                                <div className="mt-[19px] flex items-center shrink-0">
+                                    <img src={privacyDataIcon} alt="Privacy" className="w-[24px] h-[24px]" />
+                                    <h2 className="ml-[12px] text-black font-bold text-[22px] leading-tight text-left">
+                                        Privacy & Data
+                                    </h2>
                                 </div>
-                                <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
-                            </div>
 
-                            {/* Communication Preferences */}
-                            <div className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform">
-                                <div className="flex flex-col items-start text-left">
-                                    <span className="text-black font-medium text-[14px] leading-tight text-left">Communication Preferences</span>
-                                    <span className="mt-[2px] text-black/50 font-medium text-[12px] leading-tight text-left">
-                                        Manage how Grid.pe contacts you.
-                                    </span>
-                                </div>
-                                <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
-                            </div>
-                        </div>
+                                {/* Legal Section: 18px below */}
+                                <h2 className="mt-[18px] text-black font-bold text-[22px] leading-tight text-left shrink-0">
+                                    Legal
+                                </h2>
 
-                        {/* Divider: 26px below */}
-                        <div className="mt-[26px] w-[362px] h-[1px] bg-[#E9EAEB] shrink-0" />
-
-                        {/* Documents & Data uploaded Section: 12px below divider */}
-                        <div className="mt-[12px] w-full flex flex-col items-start px-0 shrink-0">
-                            <h2 className="text-black font-bold text-[22px] leading-tight text-left">Documents & Data uploaded</h2>
-                            <p className="mt-[6px] text-black font-medium text-[15px] leading-tight text-left">
-                                Documents uploaded by you for your KYC. You can update them once it expires or if you are needed to re-do the KYC procedure again.
-                            </p>
-                        </div>
-                        {/* Data Container: 24px below description */}
-                        <div className="mt-[24px] w-[362px] h-auto p-[16px] rounded-[12px] border border-[#E6E8EB] flex flex-col gap-[16px] mb-8 shrink-0">
-                            {/* Dynamic Document row */}
-                            {kycDoc && ( // Conditionally render if kycDoc data is available
-                                <div className="w-full flex items-center justify-between">
-                                    <div className="flex flex-col items-start text-left">
-                                        <span className="text-black font-medium text-[14px] leading-tight text-left">
-                                            {kycDoc.label}
-                                        </span>
-                                        <div className="mt-[4px] flex items-center gap-[6px]">
-                                            <span className="text-[#5260FE] font-medium text-[14px] leading-tight text-left">
-                                                {kycDoc.number}
+                                {/* Privacy Rows: 19px below heading */}
+                                <div className="mt-[19px] w-full flex flex-col gap-[22px] shrink-0">
+                                    {/* Privacy Centre */}
+                                    <div 
+                                        className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
+                                        onClick={() => setPrivacyStep("policy")}
+                                    >
+                                        <div className="flex flex-col items-start text-left">
+                                            <span className="text-black font-medium text-[14px] leading-tight text-left">Privacy Centre</span>
+                                            <span className="mt-[2px] text-black/50 font-medium text-[12px] leading-tight text-left">
+                                                Take control of your privacy and learn how we protect it.
                                             </span>
-                                            <img src={verifiedBadge} alt="Verified" className="w-[16px] h-[16px]" />
                                         </div>
+                                        <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
+                                    </div>
+
+                                    {/* Terms & Conditions */}
+                                    <div 
+                                        className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
+                                        onClick={() => setPrivacyStep("terms")}
+                                    >
+                                        <div className="flex flex-col items-start text-left">
+                                            <span className="text-black font-medium text-[14px] leading-tight text-left">Terms & Conditions</span>
+                                            <span className="mt-[2px] text-black/50 font-medium text-[12px] leading-tight text-left w-[267px]">
+                                                View the legal agreement between you and Grid.pe regarding app usage and services.
+                                            </span>
+                                        </div>
+                                        <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
                                     </div>
                                 </div>
-                            )}
-                        </div>
+
+                                {/* Divider: 26px below */}
+                                <div className="mt-[26px] w-[362px] h-[1px] bg-[#E9EAEB] shrink-0" />
+
+                                {/* Documents & Data uploaded Section: 12px below divider */}
+                                <div className="mt-[12px] w-full flex flex-col items-start px-0 shrink-0">
+                                    <h2 className="text-black font-bold text-[22px] leading-tight text-left">Documents & Data uploaded</h2>
+                                    <p className="mt-[6px] text-black font-medium text-[15px] leading-tight text-left">
+                                        Documents uploaded by you for your KYC. You can update them once it expires or if you are needed to re-do the KYC procedure again.
+                                    </p>
+                                </div>
+                                {/* Data Container: 24px below description */}
+                                <div className="mt-[24px] w-[362px] h-auto p-[16px] rounded-[12px] border border-[#E6E8EB] flex flex-col gap-[16px] mb-8 shrink-0">
+                                    {/* Dynamic Document row */}
+                                    {kycDoc && ( // Conditionally render if kycDoc data is available
+                                        <div className="w-full flex items-center justify-between">
+                                            <div className="flex flex-col items-start text-left">
+                                                <span className="text-black font-medium text-[14px] leading-tight text-left">
+                                                    {kycDoc.label}
+                                                </span>
+                                                <div className="mt-[4px] flex items-center gap-[6px]">
+                                                    <span className="text-[#5260FE] font-medium text-[14px] leading-tight text-left">
+                                                        {kycDoc.number}
+                                                    </span>
+                                                    <img src={verifiedBadge} alt="Verified" className="w-[16px] h-[16px]" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        ) : (
+                            <div className="w-full flex flex-col items-start">
+                                {/* Subtext */}
+                                <p className="mt-[20px] text-black font-medium text-[14px] leading-tight font-satoshi">
+                                    You’re all set — let’s make money moves.
+                                </p>
+
+                                {/* Scrollable Content Container */}
+                                <div className="mt-[20px] w-[362px] h-[600px] rounded-[22px] border border-[#E9EAEB] overflow-y-auto no-scrollbar flex flex-col items-start p-[16px]">
+                                    {isLegalLoading ? (
+                                        <div className="w-full flex flex-col items-center justify-center py-20 gap-4">
+                                            <div className="w-8 h-8 border-4 border-[#5260FE]/20 border-t-[#5260FE] rounded-full animate-spin" />
+                                            <span className="text-black/50 text-[13px] font-medium">Fetching legal details...</span>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {legalContent ? (
+                                                <div 
+                                                    className="legal-prose w-full"
+                                                    dangerouslySetInnerHTML={{ __html: legalContent }}
+                                                />
+                                            ) : (
+                                                <div className="flex flex-col items-center justify-center py-20 text-center gap-2">
+                                                    <img src={errorIcon} alt="Error" className="w-[24px] h-[24px] opacity-20 mb-2" />
+                                                    <span className="text-black font-bold text-[15px]">Content not found</span>
+                                                    <span className="text-black/50 text-[13px] leading-tight max-w-[250px]">
+                                                        Legal content is currently being updated. Please check back shortly.
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 

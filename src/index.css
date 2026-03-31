@@ -69,6 +69,65 @@ body {
   }
 }
 
+
 .faq-answer-enter {
   animation: faq-expand 200ms ease-out;
+}
+
+/* Legal Content Pros Styling */
+.legal-prose h2:first-child {
+  margin-top: 0;
+}
+
+.legal-prose h2 {
+  font-family: 'Satoshi', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: black;
+  margin-top: 24px;
+  margin-bottom: 2px;
+}
+
+.legal-prose p {
+  font-family: 'Satoshi', sans-serif;
+  font-weight: 400; /* Regular weight */
+  font-size: 12px;
+  color: black;
+  opacity: 0.8; 
+  line-height: 1.6;
+  margin-bottom: 12px; 
+}
+
+.legal-prose ul {
+  list-style-type: disc;
+  padding-left: 20px;
+  margin-bottom: 12px;
+}
+
+.legal-prose ol {
+  list-style-type: decimal;
+  padding-left: 20px;
+  margin-bottom: 12px;
+}
+
+.legal-prose li {
+  font-family: 'Satoshi', sans-serif;
+  font-weight: 400; /* Regular weight */
+  font-size: 12px;
+  color: black;
+  opacity: 0.8;
+  margin-bottom: 12px;
+}
+
+.legal-prose strong {
+  font-weight: 700;
+  color: black;
+  opacity: 1;
+}
+
+.legal-prose .last-updated {
+  color: #5260FE;
+  font-weight: 500;
+  font-size: 12px;
+  margin-bottom: 26px; /* 26px space before body starts */
 }
