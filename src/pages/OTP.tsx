@@ -4,6 +4,7 @@ import bgLight from '../assets/bg-light.png';
 import logo from '../assets/gridpe-logo.svg';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
+import { getDeviceName } from '../utils/deviceInfo';
 
 const OTP: React.FC = () => {
     const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -12,6 +13,27 @@ const OTP: React.FC = () => {
     const navigate = useNavigate();
     const { phoneNumber, login } = useAuth();
     const inputs = useRef<(HTMLInputElement | null)[]>([]);
+
+    const logSession = async (riderId: string) => {
+        try {
+            await fetch(
+                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/log-rider-session`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
+                    },
+                    body: JSON.stringify({
+                        riderId: riderId,
+                        deviceName: getDeviceName()
+                    })
+                }
+            )
+        } catch (e) {
+            console.log('Session log failed silently:', e)
+        }
+    }
 
     useEffect(() => {
         if (!phoneNumber) {
@@ -83,7 +105,8 @@ const OTP: React.FC = () => {
                 
                 setTimeout(() => {
                     // Update local auth state
-                    login(finalId, finalName, kycStatus);
+                    login(finalId, finalId, finalName, kycStatus);
+                    logSession(finalId); // Fire and forget
                     
                     if (riderExists) {
                         navigate('/dashboard');
@@ -126,8 +149,9 @@ const OTP: React.FC = () => {
                     const riderExists = !!rider;
                     const fetchedName = rider?.full_name || (rider as any)?.fullName || (rider as any)?.name || null;
                     const kycStatus = riderExists ? 'verified' : 'pending';
-                    
-                    login(data.user.id, fetchedName, kycStatus);
+                    const riderId = rider?.rider_id || data.user.id;
+                    login(data.user.id, riderId, fetchedName, kycStatus);
+                    logSession(riderId); // Fire and forget
 
                     if (riderExists) {
                         navigate('/dashboard');

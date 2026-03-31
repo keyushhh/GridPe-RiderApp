@@ -35,16 +35,20 @@ import simCardIcon from "../assets/simcard.svg";
 import smsIcon from "../assets/sms.svg";
 import successCheckIcon from "../assets/success-check.svg";
 import qrCodeImg from "../assets/trial-qr.png";
+import QRCode from 'qrcode';
 import verifiedBadge from "../assets/verified-badge.svg";
 import walletIcon from "../assets/wallet.svg";
 import AccountSelectionList from "../components/AccountSelectionList";
 import ManualBankForm from "../components/ManualBankForm";
-import PasskeyBottomSheet from "../components/PasskeyBottomSheet";
 import SupportStatusBottomSheet, { SupportStatusStep } from "../components/SupportStatusBottomSheet";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../context/ToastContext";
 import { getBankLogo } from "../utils/BankLogoMap";
 import { supabase } from "../lib/supabase";
+import corbado from '@corbado/web-js';
+import { CorbadoConnectAppend } from '@corbado/connect-react';
+
+const CORBADO_PROJECT_ID = import.meta.env.VITE_CORBADO_PROJECT_ID || "pro-5247868208405285450";
 import NetInfo from '@react-native-community/netinfo';
 import { getCarrierMetadata } from "../utils/CarrierMapping";
 // @ts-ignore - Only available in native environment
@@ -172,10 +176,13 @@ const AccountSettings = () => {
     const isDevelopment = process.env.NODE_ENV === 'development' && Platform.OS === 'web';
     const navigate = useNavigate();
     const location = useLocation();
-    const { phoneNumber, logout, kycStatus, fullName, email, avatar, updateAvatar, riderUuid } = useAuth();
+    const { riderId, phoneNumber, logout, kycStatus, fullName, email, pendingEmail, avatar, updateAvatar, riderUuid, refreshProfile } = useAuth();
     const { showToast } = useToast();
+    const [connectToken, setConnectToken] = useState<string | null>(null);
+    const [passkeyCreated, setPasskeyCreated] = useState(false);
     const [activeTab, setActiveTab] = useState(location.state?.activeTab || "Home");
-    const [loginDevices, setLoginDevices] = useState<{ id: number, model: string, city: string, lastActive: string, app: string }[]>([]);
+    const [loginDevices, setLoginDevices] = useState<{ id: string, device_name: string, location: string, last_login_at: string, is_current: boolean }[]>([]);
+    const [isLoadingSessions, setIsLoadingSessions] = useState(false);
     const [kycDoc, setKycDoc] = useState({ type: 'aadhar', label: 'Aadhar Card', number: 'XXXX 4242' });
     const [bankingStep, setBankingStep] = useState<'list' | 'add_wifi' | 'validate_sim' | 'verifying_sim' | 'linked_accounts' | 'add_form' | 'verifying_bank' | 'success'>('list');
     const [isManualSubmitting, setIsManualSubmitting] = useState(false);
@@ -187,6 +194,11 @@ const AccountSettings = () => {
     const [isAuthenticatorActive, setIsAuthenticatorActive] = useState(false);
     const [authenticatorOtp, setAuthenticatorOtp] = useState(['', '', '', '', '', '']);
     const otpInputs = useRef<(HTMLInputElement | null)[]>([]);
+    const [totpSecret, setTotpSecret] = useState<string | null>(null);
+    const [totpOtpauthUrl, setTotpOtpauthUrl] = useState<string | null>(null);
+    const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+    const [isTotpLoading, setIsTotpLoading] = useState(false);
+    const [isTotpVerifying, setIsTotpVerifying] = useState(false);
     const [tempEmail, setTempEmail] = useState("");
     const [emailError, setEmailError] = useState("");
     const [twoStepOtp, setTwoStepOtp] = useState(['', '', '', '', '', '']);
@@ -195,6 +207,44 @@ const AccountSettings = () => {
     const [phoneOtp, setPhoneOtp] = useState(['', '', '', '', '', '']);
     const phoneOtpInputs = useRef<(HTMLInputElement | null)[]>([]);
     const [isTwoStepEnabled, setIsTwoStepEnabled] = useState(true);
+
+    useEffect(() => {
+        if (activeTab === "Personal Info" || activeTab === "Security" || activeTab === "Home") {
+            refreshProfile();
+        }
+    }, [activeTab]);
+
+    // Fetch TOTP secret when entering authenticator setup step
+    useEffect(() => {
+        if (securityStep === 'authenticator' && !totpSecret) {
+            (async () => {
+                setIsTotpLoading(true);
+                try {
+                    const { data, error } = await supabase.functions.invoke('setup-totp', {
+                        body: { riderId: dynamicRiderId },
+                        headers: { Authorization: '' }
+                    });
+                    if (error) throw error;
+                    if (data?.secret && data?.otpauthUrl) {
+                        setTotpSecret(data.secret);
+                        setTotpOtpauthUrl(data.otpauthUrl);
+                        const qrUrl = await QRCode.toDataURL(data.otpauthUrl, {
+                            width: 200,
+                            margin: 2,
+                            color: { dark: '#000000', light: '#ffffff' }
+                        });
+                        setQrDataUrl(qrUrl);
+                    }
+                } catch (err: any) {
+                    console.error('Failed to setup TOTP:', err);
+                    showToast('Failed to generate authenticator secret.', 'error');
+                } finally {
+                    setIsTotpLoading(false);
+                }
+            })();
+        }
+    }, [securityStep]);
+
     const [backupCodes, setBackupCodes] = useState<string[]>(Array(8).fill("2150-7122"));
     const [fromDashboard, setFromDashboard] = useState(false);
     const [selectedMethod, setSelectedMethod] = useState<'sms' | 'auth'>('sms');
@@ -204,6 +254,28 @@ const AccountSettings = () => {
     const [dynamicRiderId, setDynamicRiderId] = useState<string>("Loading...");
     const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
     const [selectedSimPhoneNumber, setSelectedSimPhoneNumber] = useState<string>("");
+    const [hasPasskeys, setHasPasskeys] = useState(false);
+    const [isSdkReady, setIsSdkReady] = useState(false);
+    const [savedPasskeys, setSavedPasskeys] = useState<{ id: string; name: string; createdAt: Date }[]>([]);
+
+    // Initialize Corbado
+    useEffect(() => {
+        const initCorbado = async () => {
+            try {
+                // corbado is the default export (instance)
+                // Use any casting for config if types are misaligned to resolve white screen immediately
+                const config: any = {
+                    projectId: CORBADO_PROJECT_ID,
+                    darkMode: false
+                };
+                await (corbado as any).load(config);
+                setIsSdkReady(true);
+            } catch (err) {
+                console.error('Failed to initialize Corbado:', err);
+            }
+        };
+        initCorbado();
+    }, []);
 
     // Persistence Logic
     useEffect(() => {
@@ -266,7 +338,6 @@ const AccountSettings = () => {
         }
     };
 
-    const [showPasskeySheet, setShowPasskeySheet] = useState(false);
     const [verificationState, setVerificationState] = useState<'loading' | 'error' | 'success'>('loading');
     const [selectedSim, setSelectedSim] = useState(1);
     // For testing: change simCards count to 1 or 2 as needed
@@ -446,26 +517,49 @@ const AccountSettings = () => {
     };
 
     useEffect(() => {
-        const fetchRiderId = async () => {
+        const fetchRiderData = async () => {
             if (!riderUuid) return;
             try {
                 const { data, error } = await supabase
                     .from('riders')
-                    .select('rider_id')
+                    .select('rider_id, has_passkeys')
                     .eq('id', riderUuid)
                     .maybeSingle();
                 
-                if (data?.rider_id) {
-                    setDynamicRiderId(data.rider_id);
+                if (data) {
+                    if (data.rider_id) setDynamicRiderId(data.rider_id);
+                    if (data.has_passkeys !== undefined) setHasPasskeys(data.has_passkeys);
                 } else if (!error) {
                     setDynamicRiderId("GRIDPE-RDR1023"); // Fallback if no ID yet
                 }
             } catch (err) {
-                console.error('Error fetching rider_id:', err);
+                console.error('Error fetching rider data:', err);
             }
         };
-        fetchRiderId();
+        fetchRiderData();
     }, [riderUuid]);
+
+    // Fetch login sessions on Security tab mount
+    useEffect(() => {
+        if (activeTab === 'Security' && riderId && loginDevices.length === 0) {
+            (async () => {
+                setIsLoadingSessions(true);
+                try {
+                    const { data, error } = await supabase.functions.invoke('get-rider-sessions', {
+                        body: { riderId }
+                    });
+                    if (error) throw error;
+                    if (data?.sessions) {
+                        setLoginDevices(data.sessions);
+                    }
+                } catch (err) {
+                    console.error('Failed to fetch login sessions:', err);
+                } finally {
+                    setIsLoadingSessions(false);
+                }
+            })();
+        }
+    }, [activeTab, riderId]);
 
     console.log('AccountSettings render:', { kycStatus, fullName, dynamicRiderId });
 
@@ -558,47 +652,7 @@ const AccountSettings = () => {
         { label: "Bank & UPI", icon: bankIcon, tab: "Banking" },
     ];
 
-    useEffect(() => {
-        if (activeTab !== "Security") return;
 
-        const fetchDevices = async () => {
-            // Get Current Device Name
-            const ua = navigator.userAgent;
-            let model = "Web Browser";
-            if (/iPhone/i.test(ua)) model = "iPhone";
-            else if (/Android/i.test(ua)) model = "Android Device";
-            else if (/Windows/i.test(ua)) model = "Windows PC";
-            else if (/Macintosh/i.test(ua)) model = "MacBook";
-
-            let city = "Unknown City";
-
-            // Get Current City
-            if ("geolocation" in navigator) {
-                try {
-                    const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-                        navigator.geolocation.getCurrentPosition(resolve, reject);
-                    });
-                    const response = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${position.coords.latitude}&longitude=${position.coords.longitude}&localityLanguage=en`);
-                    const data = await response.json();
-                    city = `${data.city || data.locality || "Unknown"}, ${data.countryName || ""}`;
-                } catch (error) {
-                    console.error("Error fetching location:", error);
-                }
-            }
-
-            const currentDevice = {
-                id: 1,
-                model: model,
-                city: city,
-                lastActive: "current",
-                app: "Grid.Pe Rider"
-            };
-
-            setLoginDevices([currentDevice]);
-        };
-
-        fetchDevices();
-    }, [activeTab]);
 
     useEffect(() => {
         if (activeTab !== "Privacy & Data") return;
@@ -657,6 +711,56 @@ const AccountSettings = () => {
                 showToast("Failed to delete the bank account. Please try again.", "error");
             }
         }
+    };
+
+    const handleEnrollPasskey = async () => {
+        try {
+            console.log('Initiating Corbado passkey registration...');
+            
+            if (!isSdkReady) {
+                throw new Error('Corbado SDK not initialized');
+            }
+
+            // 1. Get Corbado Connect Token
+            // This is required to resolve 401 Unauthorized (missing cbo_refresh_token)
+            console.log('Fetching Corbado Connect Token...');
+            
+            if (!email) {
+                showToast("Please add an email to your account first to enable Passkeys.", "error");
+                throw new Error('Email is required for passkey registration');
+            }
+
+            const { data: tokenData, error: tokenError } = await supabase.functions.invoke('get-corbado-connect-token', {
+                body: {
+                    email: email,
+                    dynamicRiderId: dynamicRiderId
+                },
+                headers: {
+                    Authorization: ''
+                }
+            });
+
+            if (tokenError) throw tokenError;
+            const connectToken = tokenData?.connectToken;
+
+            if (!connectToken) {
+                throw new Error('Failed to obtain Corbado Connect Token');
+            }
+
+            // Let the specialized React component take over
+            setConnectToken(connectToken);
+
+        } catch (err: any) {
+            console.error('Corbado passkey registration failed:', err);
+            // Handle cancellation or lack of support
+            showToast("Passkey setup cancelled or not supported on this device.", "error");
+        }
+    };
+
+    const handleHybridEnrollment = () => {
+        // Placeholder for QR code hybrid flow
+        // In a real implementation, this would trigger the 'hybrid' transport
+        showToast("Hybrid enrollment (QR code) initiated", "success");
     };
 
     const isPrimaryAccount = addedAccounts[0]?.id === accountToDelete?.id;
@@ -968,13 +1072,25 @@ const AccountSettings = () => {
                         <div className="mt-[18px] w-full flex flex-col items-start relative px-0">
                             <span className="text-black font-medium text-[14px] leading-none">Email ID</span>
                             <div
-                                className="mt-[4px] w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
+                                className="mt-[4px] w-[362px] flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
                                 onClick={() => navigate('/account-settings/email')}
                             >
-                                <span className={`font-medium text-[18px] leading-tight ${email ? 'text-black' : 'text-black/50 italic'}`}>
-                                    {email || "Add your email (optional)"}
-                                </span>
-                                <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
+                                <div className="flex flex-col items-start">
+                                    <span className={`font-medium text-[18px] leading-tight ${email || pendingEmail ? 'text-black' : 'text-black/50 italic'}`}>
+                                        {pendingEmail || email || "Add your email (optional)"}
+                                    </span>
+                                    {pendingEmail && (
+                                        <span className="mt-[4px] px-[8px] py-[2px] bg-[#FFF3CD] text-[#856404] text-[10px] font-bold rounded-full border border-[#FFEEBA]">
+                                            Pending Verification
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-[4px]">
+                                    {email && !pendingEmail && (
+                                        <img src={verifiedBadge} alt="Verified" className="w-[16px] h-[16px]" />
+                                    )}
+                                    <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
+                                </div>
                             </div>
                         </div>
 
@@ -1018,10 +1134,17 @@ const AccountSettings = () => {
                                         <div className="flex flex-col items-start text-left">
                                             <span className="text-black font-medium text-[14px] leading-tight">Passkeys</span>
                                             <span className="mt-[2px] text-black/50 font-medium text-[12px] leading-tight w-[267px]">
-                                                Passkeys are easier and more secure than passwords
+                                                {hasPasskeys ? "Biometric security is active" : "Passkeys are easier and more secure than passwords"}
                                             </span>
                                         </div>
-                                        <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
+                                        <div className="flex items-center gap-2">
+                                            {hasPasskeys && (
+                                                <div className="h-[24px] px-[12px] bg-[#E8F5E9] rounded-full flex items-center justify-center">
+                                                    <span className="text-[#2E7D32] text-[12px] font-bold italic">Enabled</span>
+                                                </div>
+                                            )}
+                                            <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
+                                        </div>
                                     </div>
 
                                     {/* Authenticator App */}
@@ -1094,38 +1217,53 @@ const AccountSettings = () => {
                                 </div>
 
                                 {/* Device Login Containers: 16px spacing, only show if separate logins exist */}
-                                {loginDevices.length >= 1 && (
-                                    <div className={`mt-[16px] w-[362px] flex flex-col gap-[12px] mb-10 shrink-0 ${loginDevices.length >= 2 ? 'overflow-y-auto max-h-[400px]' : ''}`}>
-                                        {loginDevices.map((device) => (
-                                            <div key={device.id} className="w-[362px] h-auto p-[10px] rounded-[12px] border border-[#E9EAEB] flex items-start shrink-0">
-                                                <img src={phoneIcon} alt="Phone" className="w-[24px] h-[24px] shrink-0" />
-                                                <div className="ml-[10px] flex flex-col items-start px-0">
-                                                    {/* Device Name: 15px Medium Black */}
-                                                    <span className="text-black font-medium text-[15px] leading-tight text-left">
-                                                        {device.model}
-                                                    </span>
-
-                                                    {/* Status: 12px Bold Purple/Black, 6px below device name */}
-                                                    <span
-                                                        className={`mt-[6px] font-bold text-[12px] leading-tight text-left ${device.lastActive === "current" ? "text-[#5260FE]" : "text-black"}`}
-                                                    >
-                                                        {device.lastActive === "current" ? "Your current login" : `Last active at: ${device.lastActive}`}
-                                                    </span>
-
-                                                    {/* Location: 12px Bold Black, 6px below status */}
-                                                    <span className="mt-[6px] text-black font-bold text-[12px] leading-tight text-left">
-                                                        {device.city}
-                                                    </span>
-
-                                                    {/* App Name: 12px Bold Black, 6px below location */}
-                                                    <span className="mt-[6px] text-black font-bold text-[12px] leading-tight text-left">
-                                                        {device.app}
-                                                    </span>
+                                 {isLoadingSessions ? (
+                                    <div className="mt-[16px] w-[362px] flex flex-col gap-[12px] mb-10 shrink-0">
+                                        {[1, 2].map((i) => (
+                                            <div key={i} className="w-[362px] h-[80px] p-[10px] rounded-[12px] border border-[#E9EAEB] flex items-start shrink-0 animate-pulse bg-gray-50/30">
+                                                <div className="w-[24px] h-[24px] bg-gray-200 rounded-full shrink-0" />
+                                                <div className="ml-[10px] flex flex-col gap-[8px] flex-1">
+                                                    <div className="h-[15px] bg-gray-200 rounded w-[60%]" />
+                                                    <div className="h-[12px] bg-gray-200 rounded w-[40%]" />
+                                                    <div className="h-[12px] bg-gray-200 rounded w-[30%]" />
                                                 </div>
                                             </div>
                                         ))}
                                     </div>
-                                )}
+                                 ) : loginDevices.length >= 1 ? (
+                                     <div className={`mt-[16px] w-[362px] flex flex-col gap-[12px] mb-10 shrink-0 ${loginDevices.length >= 2 ? 'overflow-y-auto max-h-[400px]' : ''}`}>
+                                         {loginDevices.map((device) => (
+                                             <div key={device.id} className="w-[362px] h-auto p-[10px] rounded-[12px] border border-[#E9EAEB] flex items-start shrink-0 bg-white">
+                                                 <img 
+                                                     src={device.device_name.toLowerCase().includes('pc') || device.device_name.toLowerCase().includes('mac') || device.device_name.toLowerCase().includes('windows') ? securityIcon : phoneIcon} 
+                                                     alt="Device" 
+                                                     className="w-[24px] h-[24px] shrink-0 opacity-60" 
+                                                 />
+                                                 <div className="ml-[10px] flex flex-col items-start px-0">
+                                                     <span className="text-black font-medium text-[15px] leading-tight text-left">
+                                                         {device.device_name}
+                                                     </span>
+                                                     <span
+                                                         className={`mt-[6px] font-bold text-[12px] leading-tight text-left ${device.is_current ? "text-[#5260FE]" : "text-black/50"}`}
+                                                     >
+                                                         {device.is_current ? "Your current login" : `Last login: ${new Date(device.last_login_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}`}
+                                                     </span>
+                                                     <span className="mt-[6px] text-black font-bold text-[12px] leading-tight text-left opacity-90">
+                                                         {device.location}
+                                                     </span>
+                                                     <span className="mt-[6px] text-black/40 font-medium text-[11px] leading-tight text-left uppercase tracking-wider">
+                                                         Grid.Pe Rider App
+                                                     </span>
+                                                 </div>
+                                             </div>
+                                         ))}
+                                     </div>
+                                 ) : (
+                                    <div className="mt-[16px] w-[362px] py-[30px] rounded-[12px] border border-[#E9EAEB] border-dashed flex flex-col items-center justify-center gap-2 mb-10">
+                                        <img src={errorIcon} alt="Empty" className="w-[20px] h-[20px] opacity-20" />
+                                        <span className="text-black/30 font-medium text-[13px]">No recent logins found</span>
+                                    </div>
+                                 )}
                             </>
                         ) : securityStep === "passkeys" ? (
                             <div className="w-full flex-1 flex flex-col">
@@ -1133,7 +1271,7 @@ const AccountSettings = () => {
                                 <div className="mt-[29px] flex items-center gap-[12px]">
                                     <img src={shieldIcon} alt="Security" className="w-[24px] h-[24px]" />
                                     <h2 className="text-black font-bold text-[22px] leading-tight text-left">
-                                        Create a passkey
+                                        {savedPasskeys.length > 0 ? 'Passkeys' : 'Create a passkey'}
                                     </h2>
                                 </div>
 
@@ -1147,37 +1285,84 @@ const AccountSettings = () => {
                                     </p>
                                 </div>
 
-                                {/* List of methods */}
-                                <div className="mt-[24px] flex flex-col gap-[18px]">
-                                    <div className="flex items-center gap-[12px]">
-                                        <img src={faceIdIcon} alt="Face ID" className="w-[24px] h-[24px]" />
-                                        <span className="text-black font-medium text-[16px]">Face ID</span>
-                                    </div>
-                                    <div className="flex items-center gap-[12px]">
-                                        <img src={fingerprintIcon} alt="Touch ID" className="w-[24px] h-[24px]" />
-                                        <span className="text-black font-medium text-[16px]">Touch ID</span>
-                                    </div>
-                                    <div className="flex items-center gap-[12px]">
-                                        <img src={passcodeIcon} alt="Passcode" className="w-[24px] h-[24px]" />
-                                        <span className="text-black font-medium text-[16px]">Passcode</span>
-                                    </div>
-                                </div>
+                                {savedPasskeys.length > 0 ? (
+                                    <>
+                                        {/* Passkey List */}
+                                        <div className="mt-[24px] flex flex-col gap-[16px]">
+                                            {savedPasskeys.map((pk) => (
+                                                <div key={pk.id} className="w-full flex items-center justify-between">
+                                                    <div className="flex flex-col items-start">
+                                                        <span className="text-black font-medium text-[16px] leading-tight">
+                                                            {pk.name}
+                                                        </span>
+                                                        <span className="mt-[4px] text-black/50 font-medium text-[14px] leading-tight">
+                                                            Date created: {pk.createdAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        className="w-[36px] h-[36px] flex items-center justify-center cursor-pointer active:scale-[0.90] transition-transform"
+                                                        onClick={() => {
+                                                            setSavedPasskeys(prev => prev.filter(p => p.id !== pk.id));
+                                                            if (savedPasskeys.length <= 1) {
+                                                                setHasPasskeys(false);
+                                                            }
+                                                            showToast("Passkey deleted", "success");
+                                                        }}
+                                                    >
+                                                        <img src={deleteIcon} alt="Delete" className="w-[20px] h-[20px] opacity-60" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
 
-                                {/* Buttons at bottom */}
-                                <div className="mt-auto pb-[32px] flex flex-col gap-[12px] w-full">
-                                    <button
-                                        className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
-                                        onClick={() => setShowPasskeySheet(true)}
-                                    >
-                                        Create passkey
-                                    </button>
-                                    <button
-                                        className="w-full h-[48px] rounded-full border border-black bg-white text-black font-medium text-[16px] transition-transform active:scale-[0.98]"
-                                        onClick={() => setSecurityStep("list")}
-                                    >
-                                        Not Now
-                                    </button>
-                                </div>
+                                        {/* Create passkey button at bottom */}
+                                        <div className="mt-auto pb-[32px] flex flex-col gap-[12px] w-full">
+                                            <button
+                                                className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
+                                                onClick={() => {
+                                                    setPasskeyCreated(false);
+                                                    handleEnrollPasskey();
+                                                }}
+                                            >
+                                                Create passkey
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        {/* List of methods */}
+                                        <div className="mt-[24px] flex flex-col gap-[18px]">
+                                            <div className="flex items-center gap-[12px]">
+                                                <img src={faceIdIcon} alt="Face ID" className="w-[24px] h-[24px]" />
+                                                <span className="text-black font-medium text-[16px]">Face ID</span>
+                                            </div>
+                                            <div className="flex items-center gap-[12px]">
+                                                <img src={fingerprintIcon} alt="Touch ID" className="w-[24px] h-[24px]" />
+                                                <span className="text-black font-medium text-[16px]">Touch ID</span>
+                                            </div>
+                                            <div className="flex items-center gap-[12px]">
+                                                <img src={passcodeIcon} alt="Passcode" className="w-[24px] h-[24px]" />
+                                                <span className="text-black font-medium text-[16px]">Passcode</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Buttons at bottom */}
+                                        <div className="mt-auto pb-[32px] flex flex-col gap-[12px] w-full">
+                                            <button
+                                                className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
+                                                onClick={handleEnrollPasskey}
+                                            >
+                                                Create Passkey
+                                            </button>
+                                            <button
+                                                className="w-full h-[48px] rounded-full border border-black bg-white text-black font-medium text-[16px] transition-transform active:scale-[0.98]"
+                                                onClick={() => setSecurityStep("list")}
+                                            >
+                                                Not Now
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         ) : securityStep === "authenticator" ? (
                             <div className="w-full flex-1 flex flex-col">
@@ -1191,16 +1376,30 @@ const AccountSettings = () => {
 
                                 {/* QR Code Section */}
                                 <div className="mt-[32px] flex flex-col items-center">
-                                    <img src={qrCodeImg} alt="QR Code" className="w-[150px] h-[150px]" />
+                                    {isTotpLoading ? (
+                                        <div className="w-[150px] h-[150px] flex items-center justify-center">
+                                            <div className="w-[32px] h-[32px] border-4 border-black/10 border-t-black rounded-full animate-spin" />
+                                        </div>
+                                    ) : qrDataUrl ? (
+                                        <img src={qrDataUrl} alt="TOTP QR Code" width={200} height={200} />
+                                    ) : (
+                                        <img src={qrCodeImg} alt="QR Code" width={200} height={200} />
+                                    )}
 
                                     <span className="mt-[32px] text-black font-bold text-[18px] text-center max-w-[300px] leading-tight break-all">
-                                        6EJN-7ZBA-VO63-X6BE-42DI-ZBT2-BKPR-3YR7
+                                        {totpSecret
+                                            ? totpSecret.match(/.{1,4}/g)?.join('-')
+                                            : '····-····-····-····-····-····-····-····'
+                                        }
                                     </span>
 
                                     <button
                                         className="mt-[20px] h-[34px] px-[20px] bg-[#E9EAEB] rounded-full text-black font-medium text-[14px] flex items-center justify-center transition-transform active:scale-95"
                                         onClick={() => {
-                                            navigator.clipboard.writeText("6EJN-7ZBA-VO63-X6BE-42DI-ZBT2-BKPR-3YR7");
+                                            if (totpSecret) {
+                                                navigator.clipboard.writeText(totpSecret);
+                                                showToast('Secret key copied to clipboard', 'success');
+                                            }
                                         }}
                                     >
                                         Copy Key
@@ -1232,7 +1431,7 @@ const AccountSettings = () => {
                                 {/* Next Button */}
                                 <div className="mt-auto pb-[32px] w-full">
                                     <button
-                                        className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
+                                        className={`w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98] ${!totpSecret ? 'opacity-50 pointer-events-none' : ''}`}
                                         onClick={() => setSecurityStep("authenticator_otp")}
                                     >
                                         Next
@@ -1286,24 +1485,36 @@ const AccountSettings = () => {
                                 {/* Next Button */}
                                 <div className="mt-auto pb-[32px] w-full">
                                     <button
-                                        className={`w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98] ${authenticatorOtp.join('').length === 6 ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}
-                                        onClick={() => {
-                                            if (authenticatorOtp.join('') === "123456") {
-                                                setIsAuthenticatorActive(true);
-                                                setSelectedMethod("auth");
-                                                if (securityStep === "authenticator_otp") {
-                                                    // If we came from 2-step setup, go to dashboard
-                                                    setSecurityStep("two_step_dashboard");
-                                                } else {
+                                        className={`w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98] ${authenticatorOtp.join('').length === 6 && !isTotpVerifying ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}
+                                        onClick={async () => {
+                                            setIsTotpVerifying(true);
+                                            try {
+                                                const { data, error } = await supabase.functions.invoke('verify-totp', {
+                                                    body: {
+                                                        riderId: dynamicRiderId,
+                                                        code: authenticatorOtp.join('')
+                                                    },
+                                                    headers: { Authorization: '' }
+                                                });
+                                                if (error) throw error;
+                                                if (data?.success) {
+                                                    setIsAuthenticatorActive(true);
+                                                    setSelectedMethod("auth");
                                                     setSecurityStep("list");
+                                                    setAuthenticatorOtp(['', '', '', '', '', '']);
+                                                    showToast("Authenticator app verified successfully", "success");
+                                                } else {
+                                                    showToast(data?.error || "Invalid code. Please try again.", "error");
                                                 }
-                                                setAuthenticatorOtp(['', '', '', '', '', '']);
-                                            } else {
-                                                alert("Invalid OTP. Try 123456");
+                                            } catch (err: any) {
+                                                console.error('TOTP verification failed:', err);
+                                                showToast("Verification failed. Please try again.", "error");
+                                            } finally {
+                                                setIsTotpVerifying(false);
                                             }
                                         }}
                                     >
-                                        Next
+                                        {isTotpVerifying ? 'Verifying...' : 'Next'}
                                     </button>
                                 </div>
                             </div>
@@ -2354,14 +2565,36 @@ const AccountSettings = () => {
                 )}
             </div>
 
-            {/* Passkey Bottom Sheet */}
-            {showPasskeySheet && (
-                <PasskeyBottomSheet
-                    onClose={() => setShowPasskeySheet(false)}
-                    onAddPasskey={() => setShowPasskeySheet(false)}
-                    onOtherDevice={() => setShowPasskeySheet(false)}
-                    email={email || "rohitkhandelwal.email.com"}
-                />
+            {/* Corbado Passkey Handlers */}
+            {!passkeyCreated && connectToken && (
+                <div style={{ height: 0, overflow: 'hidden' }}>
+                    <CorbadoConnectAppend
+                        appendTokenProvider={async () => connectToken!}
+                        onSkip={(status: any) => {
+                            console.log('Passkey append skipped:', status)
+                            setConnectToken(null)
+                        }}
+                        onComplete={(status: any, clientState: any) => {
+                            console.log('Passkey created successfully:', status)
+                            setPasskeyCreated(true)
+                            setConnectToken(null)
+                            setHasPasskeys(true)
+                            // Add the passkey to the saved list
+                            const platformName = navigator.userAgent.includes('Mac') || navigator.userAgent.includes('iPhone')
+                                ? 'iCloud Keychain'
+                                : navigator.userAgent.includes('Android')
+                                    ? 'Google Password Manager'
+                                    : 'Windows Hello';
+                            setSavedPasskeys(prev => [...prev, {
+                                id: crypto.randomUUID(),
+                                name: platformName,
+                                createdAt: new Date()
+                            }]);
+                            setSecurityStep('passkeys')
+                            showToast("Passkey Added Successfully", "success")
+                        }}
+                    />
+                </div>
             )}
 
             {/* Support Status Bottom Sheet */}

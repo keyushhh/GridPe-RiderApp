@@ -3,10 +3,12 @@ import { supabase } from '../lib/supabase';
 
 interface AuthContextType {
     riderUuid: string | null;
+    riderId: string | null;
     phoneNumber: string | null;
     fullName: string | null;
     kycStatus: string | null;
     email: string | null;
+    pendingEmail: string | null;
     avatar: string | null;
     kycDocsUrl: string[] | null;
     selectedCity: string | null;
@@ -21,7 +23,7 @@ interface AuthContextType {
     setPhoneNumber: (phone: string | null) => void;
     updateEmail: (email: string | null) => void;
     updateAvatar: (file: File) => Promise<string | null>;
-    login: (uuid: string, fullName?: string | null, kycStatus?: string | null) => void;
+    login: (uuid: string, riderId: string, fullName?: string | null, kycStatus?: string | null) => void;
     refreshProfile: () => Promise<void>;
     logout: () => void;
     loading: boolean;
@@ -31,10 +33,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [riderUuid, setRiderUuid] = useState<string | null>(localStorage.getItem('rider_uuid'));
+    const [riderId, setRiderId] = useState<string | null>(localStorage.getItem('rider_id'));
     const [phoneNumber, setPhoneNumberState] = useState<string | null>(localStorage.getItem('rider_phone'));
     const [fullName, setFullName] = useState<string | null>(localStorage.getItem('rider_kyc_name'));
     const [kycStatus, setKycStatus] = useState<string | null>(localStorage.getItem('rider_kyc_status'));
     const [email, setEmailState] = useState<string | null>(localStorage.getItem('rider_email'));
+    const [pendingEmail, setPendingEmailState] = useState<string | null>(localStorage.getItem('rider_pending_email'));
     const [avatar, setAvatarState] = useState<string | null>(localStorage.getItem('rider_avatar'));
     const [kycDocsUrl, setKycDocsUrl] = useState<string[] | null>(JSON.parse(localStorage.getItem('rider_kyc_docs') || 'null'));
     const [selectedCity, setSelectedCity] = useState<string | null>(localStorage.getItem('rider_selected_city'));
@@ -109,6 +113,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!riderUuid) return;
 
         try {
+            const { data: authData } = await supabase.auth.getUser();
+            const confirmedEmail = authData?.user?.email || null;
+            const newEmail = authData?.user?.new_email || null;
+
+            if (newEmail) {
+                setPendingEmailState(newEmail);
+                localStorage.setItem('rider_pending_email', newEmail);
+            } else {
+                setPendingEmailState(null);
+                localStorage.removeItem('rider_pending_email');
+            }
+
             const { data, error } = await supabase
                 .from('riders')
                 .select('*, service_zones(id, name), hubs(id, location_name)')
@@ -128,10 +144,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             if (data) {
                 // Sync Supabase data to local state & storage
-                if (data.full_name) {
+                if (data.rider_id) {
                     setFullName(data.full_name);
+                    setRiderId(data.rider_id);
                     localStorage.setItem('rider_kyc_name', data.full_name);
+                    localStorage.setItem('rider_id', data.rider_id);
                 }
+
+                if (confirmedEmail && data.email !== confirmedEmail) {
+                    await supabase.from('riders').update({ email: confirmedEmail }).eq('id', riderUuid);
+                    setEmailState(confirmedEmail);
+                    localStorage.setItem('rider_email', confirmedEmail);
+                } else if (data.email) {
+                    setEmailState(data.email);
+                    localStorage.setItem('rider_email', data.email);
+                } else if (confirmedEmail) {
+                    setEmailState(confirmedEmail);
+                    localStorage.setItem('rider_email', confirmedEmail);
+                }
+
                 if (data.kyc_status) {
                     setKycStatus(data.kyc_status);
                     localStorage.setItem('rider_kyc_status', data.kyc_status);
@@ -212,10 +243,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     }, [kycStatus]);
 
-    const login = (uuid: string, name?: string | null, status?: string | null) => {
-        console.log('login called:', { uuid, name, status });
+    const login = (uuid: string, rId: string, name?: string | null, status?: string | null) => {
+        console.log('login called:', { uuid, rId, name, status });
         localStorage.setItem('rider_uuid', uuid);
+        localStorage.setItem('rider_id', rId);
         setRiderUuid(uuid);
+        setRiderId(rId);
         
         if (name !== undefined) {
             if (name) {
@@ -241,6 +274,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const logout = () => {
         // Clear all auth and app state from localStorage
         localStorage.removeItem('rider_uuid');
+        localStorage.removeItem('rider_id');
         localStorage.removeItem('rider_phone');
         localStorage.removeItem('rider_kyc_name');
         localStorage.removeItem('rider_kyc_status');
@@ -248,6 +282,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('rider_has_been_online');
         localStorage.removeItem('rider_earnings');
         localStorage.removeItem('rider_email');
+        localStorage.removeItem('rider_pending_email');
         localStorage.removeItem('rider_avatar');
         localStorage.removeItem('rider_selected_city');
         localStorage.removeItem('rider_selected_hub');
@@ -259,10 +294,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         // Reset all React state
         setRiderUuid(null);
+        setRiderId(null);
         setPhoneNumberState(null);
         setFullName(null);
         setKycStatus(null);
         setEmailState(null);
+        setPendingEmailState(null);
         setAvatarState(null);
         setTotalEarnings(0);
         setIsOnlineState(false);
@@ -279,6 +316,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return (
         <AuthContext.Provider value={{ 
             riderUuid, 
+            riderId,
             phoneNumber, 
             fullName, 
             kycStatus, 
@@ -290,6 +328,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             selectedZoneName,
             selectedHubName,
             email, 
+            pendingEmail,
             avatar, 
             totalEarnings,
             isOnline,
