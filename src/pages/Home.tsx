@@ -911,9 +911,15 @@ const Home = () => {
                                     transactionService.addTransaction({
                                         type: 'Earnings',
                                         title: 'Delivery Tip Received',
-                                        detail: `Delivery for ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`,
-                                        amount: '₹50',
-                                        status: 'success'
+                                        description: `Delivery for ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`,
+                                        amount: '50',
+                                        fee: 0,
+                                        tds: 0,
+                                        final_amount: 50,
+                                        status: 'success',
+                                        created_at: new Date().toISOString(),
+                                        reference_id: `TIP-${Date.now()}`,
+                                        rider_id: riderUuid || 'GRIDPE-RIDER'
                                     });
                                 }}
                                 className="text-[12px] font-medium text-[#5260FE] opacity-40 hover:opacity-100 transition-opacity"
