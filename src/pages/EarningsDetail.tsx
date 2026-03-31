@@ -5,11 +5,34 @@ import downloadIcon from "../assets/download.svg";
 const EarningsDetail = () => {
     const navigate = useNavigate();
     const location = useLocation();
-    const { title, dateDisplay, amount, hoursDisplay } = location.state || {
+    const { title, dateDisplay, amount, hoursDisplay, breakdown, deliveries } = location.state || {
         title: "Earnings details",
         dateDisplay: "---",
         amount: 0,
-        hoursDisplay: "0 hours on duty"
+        hoursDisplay: "0 hours on duty",
+        breakdown: { orderEarnings: 0, tips: 0 },
+        deliveries: 0
+    };
+
+    const downloadSummary = () => {
+        const headers = ["Date", "Orders Completed", "Order Earnings (₹)", "Tips (₹)", "Total Earnings (₹)"];
+        const row = [
+            dateDisplay,
+            deliveries || 0,
+            breakdown?.orderEarnings || 0,
+            breakdown?.tips || 0,
+            amount
+        ];
+        
+        const csvContent = [headers.join(","), row.join(",")].join("\n");
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `GridPe_Earnings_${dateDisplay.replace(/ /g, '_')}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     return (
@@ -79,7 +102,7 @@ const EarningsDetail = () => {
                                 Order Earnings
                             </span>
                             <span className="text-[14px] font-medium text-black" style={{ letterSpacing: "-0.43px" }}>
-                                ₹{location.state?.breakdown?.orderEarnings?.toLocaleString() || "0"}
+                                ₹{breakdown?.orderEarnings?.toLocaleString() || "0"}
                             </span>
                         </div>
 
@@ -89,7 +112,7 @@ const EarningsDetail = () => {
                                 Customer Tips
                             </span>
                             <span className="text-[14px] font-medium text-[#22C55E]" style={{ letterSpacing: "-0.43px" }}>
-                                ₹{location.state?.breakdown?.tips?.toLocaleString() || "0"}
+                                ₹{breakdown?.tips?.toLocaleString() || "0"}
                             </span>
                         </div>
                     </div>
@@ -103,12 +126,12 @@ const EarningsDetail = () => {
                     {/* Summary Row: 12px below divider */}
                     <div className="mt-[12px] w-full px-[12px] flex justify-between items-center">
                         <span className="text-[14px] font-medium text-black" style={{ letterSpacing: "-0.43px" }}>
-                            {location.state?.title?.includes("Week") ? "Average per delivery:" : "Total earning:"}
+                            {title?.includes("Week") ? "Average per delivery:" : "Total earning:"}
                         </span>
                         <span className="text-[14px] font-medium text-black" style={{ letterSpacing: "-0.43px" }}>
-                            ₹{location.state?.title?.includes("Week")
-                                ? Math.round((location.state?.amount || 0) / (location.state?.deliveries || 46)).toLocaleString()
-                                : (location.state?.amount || 0).toLocaleString()
+                            ₹{title?.includes("Week")
+                                ? (deliveries > 0 ? Math.round(amount / deliveries).toLocaleString() : "0")
+                                : Number(amount).toLocaleString()
                             }
                         </span>
                     </div>
@@ -138,8 +161,11 @@ const EarningsDetail = () => {
                     <div className="pb-[16px]" />
                 </div>
 
-                {/* Download Summary CTA: 304px below previous container */}
-                <button className="mt-[304px] w-[362px] h-[48px] rounded-full bg-black flex items-center justify-center gap-[8px] transition-transform active:scale-95 shrink-0">
+                {/* Download Summary CTA */}
+                <button 
+                    onClick={downloadSummary}
+                    className="mt-auto mb-[20px] w-[362px] h-[48px] rounded-full bg-black flex items-center justify-center gap-[8px] transition-transform active:scale-95 shrink-0"
+                >
                     <span className="text-white text-[16px] font-medium" style={{ letterSpacing: "-0.43px" }}>
                         Download Summary
                     </span>

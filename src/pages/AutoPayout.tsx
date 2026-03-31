@@ -1,5 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "../lib/supabase";
+import { useAuth } from "../hooks/useAuth";
+import { useToast } from "../context/ToastContext";
 import chevronBackward from "../assets/chevron_backward.svg";
 import { getBankLogo } from "../utils/BankLogoMap";
 
@@ -35,52 +38,97 @@ const BankLogo = ({ bankName, className }: { bankName: string, className?: strin
 
 const AutoPayout: React.FC = () => {
     const navigate = useNavigate();
+    const { riderId } = useAuth();
+    const { showToast } = useToast();
     
-    // Initialize state from localStorage if available
-    const [isAutoPayoutEnabled, setIsAutoPayoutEnabled] = useState(() => {
-        return localStorage.getItem("auto_payout_setup") === "true";
-    });
-    const [selectedSchedule, setSelectedSchedule] = useState(() => {
-        return localStorage.getItem("auto_payout_schedule") || "Weekly";
-    });
-    const [minBalance, setMinBalance] = useState(() => {
-        return localStorage.getItem("auto_payout_min_balance") || "0";
-    });
-
-    const [isEditMode, setIsEditMode] = useState(() => {
-        return localStorage.getItem("auto_payout_setup") !== "true";
-    });
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [isAutoPayoutEnabled, setIsAutoPayoutEnabled] = useState(true);
+    const [selectedSchedule, setSelectedSchedule] = useState("twice_monthly");
+    const [minBalance, setMinBalance] = useState("0");
+    const [allBankAccounts, setAllBankAccounts] = useState<any[]>([]);
+    const [selectedBankId, setSelectedBankId] = useState<string | null>(null);
+    const [isEditMode, setIsEditMode] = useState(true);
 
     const payoutOptions = [
-        { label: "Quarterly", detail: "" },
-        { label: "Monthly", detail: " (last day of each month)" },
-        { label: "Twice per month", detail: " (2nd and 4th Saturday of each month)" },
-        { label: "Weekly", detail: " (every Monday)" }
+        { id: 'quarterly', label: "Quarterly", detail: "" },
+        { id: 'monthly', label: "Monthly", detail: " (last day of each month)" },
+        { id: 'twice_monthly', label: "Twice per month", detail: " (2nd and 4th Saturday of each month)" },
+        { id: 'weekly', label: "Weekly", detail: " (every Monday)" }
     ];
 
-    const [bankAccounts] = useState(() => {
-        const saved = localStorage.getItem('rider_bank_accounts');
-        return saved ? JSON.parse(saved) : [];
-    });
-    const [selectedBankId, setSelectedBankId] = useState(() => {
-        const saved = localStorage.getItem('rider_bank_accounts');
-        const accounts = saved ? JSON.parse(saved) : [];
-        return accounts.length > 0 ? accounts[0].id : null;
-    });
+    const fetchSettings = useCallback(async () => {
+        if (!riderId) return;
+        setLoading(true);
+        try {
+            const { data, error } = await supabase.functions.invoke('get-payout-settings', {
+                body: { riderId }
+            });
+            if (error) throw error;
 
-    const isBalanceInvalid = minBalance !== "" && parseInt(minBalance) < 2500;
+            if (data.settings) {
+                setIsAutoPayoutEnabled(data.settings.auto_payout_enabled ?? true);
+                setSelectedSchedule(data.settings.payout_schedule ?? "twice_monthly");
+                setMinBalance(String(data.settings.minimum_balance ?? "0"));
+                // Start in non-edit mode if settings exist
+                if (data.settings.id) setIsEditMode(false);
+            }
+            
+            if (data.allBankAccounts) {
+                setAllBankAccounts(data.allBankAccounts);
+                const primary = data.allBankAccounts.find((b: any) => b.is_primary);
+                if (primary) setSelectedBankId(primary.id);
+            }
+        } catch (err) {
+            console.error("Error fetching payout settings:", err);
+            showToast("Failed to load payout settings", "error");
+        } finally {
+            setLoading(false);
+        }
+    }, [riderId, showToast]);
+
+    useEffect(() => {
+        fetchSettings();
+    }, [fetchSettings]);
+
+    const isBalanceInvalid = minBalance !== "" && parseInt(minBalance) > 0 && parseInt(minBalance) < 2500;
 
     const handleMinBalanceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value.replace(/[^0-9]/g, '');
         setMinBalance(value);
     };
 
-    const handleSave = () => {
-        localStorage.setItem("auto_payout_setup", "true");
-        localStorage.setItem("auto_payout_schedule", selectedSchedule);
-        localStorage.setItem("auto_payout_min_balance", minBalance);
-        navigate("/auto-payout-success");
+    const handleSave = async () => {
+        if (!riderId) return;
+        setSaving(true);
+        try {
+            const { error } = await supabase.functions.invoke('save-payout-settings', {
+                body: { 
+                    riderId,
+                    payoutSchedule: selectedSchedule,
+                    minimumBalance: parseInt(minBalance) || 0,
+                    autoPayoutEnabled: isAutoPayoutEnabled,
+                    primaryBankId: selectedBankId
+                }
+            });
+            if (error) throw error;
+            showToast("Payout settings saved", "success");
+            navigate("/auto-payout-success");
+        } catch (err) {
+            console.error("Error saving payout settings:", err);
+            showToast("Failed to save settings", "error");
+        } finally {
+            setSaving(false);
+        }
     };
+
+    if (loading) {
+        return (
+            <div className="h-[100dvh] w-full flex items-center justify-center bg-[#F5F5F5]">
+                <div className="w-8 h-8 border-4 border-[#5260FE] border-t-transparent rounded-full animate-spin" />
+            </div>
+        );
+    }
 
     return (
         <div className="relative w-full h-[100dvh] bg-[#F5F5F5] font-satoshi flex flex-col items-center overflow-hidden">
@@ -112,7 +160,7 @@ const AutoPayout: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Preferred Payout Schedule Container: 29px below header */}
+                {/* Preferred Payout Schedule Container */}
                 <div className="mt-[29px] w-[362px] h-auto rounded-[14px] bg-white border border-[#EDEDED] relative shrink-0">
                     <div className="flex justify-between items-start pt-[15px] px-[16px]">
                         <div className="flex flex-col">
@@ -148,11 +196,11 @@ const AutoPayout: React.FC = () => {
                         <div className={`mt-[14px] flex flex-col items-center gap-[7px] w-full transition-opacity duration-300 ${isAutoPayoutEnabled && isEditMode ? 'opacity-100' : 'opacity-50'
                             } ${(!isAutoPayoutEnabled || !isEditMode) ? 'pointer-events-none' : ''}`}>
                             {payoutOptions.map((option, idx) => {
-                                const isSelected = selectedSchedule === option.label;
+                                const isSelected = selectedSchedule === option.id;
                                 return (
                                     <div 
                                         key={idx}
-                                        onClick={() => isEditMode && isAutoPayoutEnabled && setSelectedSchedule(option.label)}
+                                        onClick={() => isEditMode && isAutoPayoutEnabled && setSelectedSchedule(option.id)}
                                         className="w-[331px] h-auto min-h-[44px] bg-[#EFEFEF] rounded-[9px] px-[7px] py-[10px] flex items-center gap-[10px] cursor-pointer transition-all active:scale-[0.98]"
                                     >
                                         <div className={`w-[18px] h-[18px] rounded-full border-[1.5px] border-[#5260FE] flex items-center justify-center shrink-0`}>
@@ -193,6 +241,7 @@ const AutoPayout: React.FC = () => {
                                         type="text"
                                         inputMode="numeric"
                                         value={minBalance}
+                                        placeholder="0"
                                         onChange={handleMinBalanceChange}
                                         readOnly={!isEditMode}
                                         disabled={!isEditMode}
@@ -205,27 +254,30 @@ const AutoPayout: React.FC = () => {
                                         Your minimum payout balance must be ₹2500
                                     </p>
                                 )}
+                                <div className="mt-[8px] text-[12px] font-medium text-black/40 leading-tight" style={{ letterSpacing: "-0.43px" }}>
+                                    Payout will only release when wallet balance exceeds this amount
+                                </div>
                                 <div className="pb-[24px]" />
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Payout Method Container: 16px below */}
+                {/* Payment Method Container */}
                 <div className={`mt-[16px] w-[362px] h-auto rounded-[14px] bg-white border border-[#EDEDED] p-[16px] flex flex-col shrink-0 relative transition-opacity duration-300 ${isEditMode ? 'opacity-100' : 'opacity-50'}`}>
                     <h3 className="text-[16px] font-bold text-black" style={{ letterSpacing: "-0.43px" }}>
-                        Payout Method
+                        Payment Method
                     </h3>
                     
-                    {bankAccounts.length === 0 ? (
+                    {allBankAccounts.length === 0 ? (
                         <>
                             <p className="mt-[12px] text-[14px] font-medium text-black/50 leading-tight" style={{ letterSpacing: "-0.43px" }}>
                                 You have not set up your bank details yet. Set it now so that you don't miss payments directly in your bank account?
                             </p>
                             <button 
                                 onClick={() => navigate("/account-settings", { state: { activeTab: "Banking" } })}
+                                className="mt-[18px] w-full h-[44px] rounded-full bg-[#5260FE] text-white text-[16px] font-medium transition-transform active:scale-95 shadow-[0px_4px_12px_rgba(82,96,254,0.2)]"
                                 disabled={!isEditMode}
-                                className="mt-[18px] w-full h-[44px] rounded-full bg-[#5260FE] text-white text-[16px] font-medium transition-transform active:scale-95 shadow-[0px_4px_12px_rgba(82,96,254,0.2)] disabled:opacity-50"
                             >
                                 Add Bank Account
                             </button>
@@ -236,34 +288,41 @@ const AutoPayout: React.FC = () => {
                                 Your auto payout will be sent to your primary bank account.
                             </p>
                             
-                            <div className="mt-[9px] flex flex-col gap-[9px]">
-                                {bankAccounts.map((acc: any, index: number) => {
+                            <div className="mt-[15px] flex flex-col gap-[15px]">
+                                {allBankAccounts.map((acc: any, index: number) => {
                                     const isSelected = selectedBankId === acc.id;
-                                    const last4 = acc.accountNumber ? acc.accountNumber.slice(-4) : "0960";
+                                    const last4 = acc.account_number_masked?.slice(-4) || acc.account_number?.slice(-4) || "0960";
                                     return (
-                                        <div 
-                                            key={acc.id}
-                                            onClick={() => isEditMode && setSelectedBankId(acc.id)}
-                                            className="flex flex-col gap-[9px]"
-                                        >
+                                        <div key={acc.id} className="flex flex-col gap-[15px]">
                                             {index > 0 && <div className="w-full h-[1px] bg-[#EDEDED]" />}
-                                            <div className="flex items-center gap-[12px] cursor-pointer">
-                                                <div className={`w-[24px] h-[24px] rounded-full border-[1.5px] border-[#5260FE] flex items-center justify-center shrink-0`}>
+                                            <div 
+                                                className="flex items-center gap-[12px] cursor-pointer"
+                                                onClick={() => isEditMode && setSelectedBankId(acc.id)}
+                                            >
+                                                <div className={`w-[20px] h-[20px] rounded-full border-[1.5px] border-[#5260FE] flex items-center justify-center shrink-0`}>
                                                     {isSelected && (
-                                                        <div className="w-[14px] h-[14px] rounded-full bg-[#5260FE]" />
+                                                        <div className="w-[12px] h-[12px] rounded-full bg-[#5260FE]" />
                                                     )}
                                                 </div>
                                                 <div className="flex flex-1 items-center justify-between">
                                                     <div className="flex items-center gap-[12px]">
                                                         <div className="w-[32px] h-[32px] rounded-full bg-[#F5F5F5] flex items-center justify-center shrink-0 overflow-hidden p-[6px]">
-                                                            <BankLogo bankName={acc.bankName} />
+                                                            <BankLogo bankName={acc.bank_name} />
                                                         </div>
-                                                        <span className="text-[14px] font-medium text-black/50" style={{ letterSpacing: "-0.43px" }}>
-                                                            {acc.bankName} - XXXX 1023
-                                                        </span>
+                                                        <div className="flex flex-col">
+                                                            <span className="text-[14px] font-medium text-black" style={{ letterSpacing: "-0.43px" }}>
+                                                                {acc.bank_name} - {last4}
+                                                            </span>
+                                                            <div className="flex items-center gap-[4px] mt-[1px]">
+                                                                <div className={`w-[6px] h-[6px] rounded-full ${acc.verification_status === 'verified' ? 'bg-[#0B902B]' : 'bg-[#FF9500]'}`} />
+                                                                <span className="text-[10px] font-bold text-black/40 uppercase">
+                                                                    {acc.verification_status || 'Pending'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                    {index === 0 && (
-                                                        <div className="w-[60px] h-[18px] rounded-full bg-[#0B902B] flex items-center justify-center shrink-0">
+                                                    {acc.is_primary && (
+                                                        <div className="h-[18px] px-[8px] rounded-full bg-[#0B902B] flex items-center justify-center">
                                                             <span className="text-white text-[10px] font-bold">Primary</span>
                                                         </div>
                                                     )}
@@ -282,15 +341,15 @@ const AutoPayout: React.FC = () => {
             <div className="fixed bottom-0 w-full bg-[#F5F5F5]/80 backdrop-blur-sm pt-4 pb-10 flex flex-col items-center gap-[12px] z-20">
                 <button
                     onClick={() => isEditMode ? handleSave() : setIsEditMode(true)}
-                    disabled={isEditMode && (!isAutoPayoutEnabled || !selectedSchedule || minBalance.length === 0 || isBalanceInvalid)}
+                    disabled={saving || (isEditMode && (allBankAccounts.length === 0 || !selectedBankId || !isAutoPayoutEnabled || isBalanceInvalid))}
                     className={`w-[362px] h-[48px] rounded-full flex items-center justify-center text-[16px] font-medium transition-all active:scale-[0.98] ${
-                        (isEditMode && (!isAutoPayoutEnabled || !selectedSchedule || minBalance.length === 0 || isBalanceInvalid))
+                        (isEditMode && (allBankAccounts.length === 0 || !selectedBankId || !isAutoPayoutEnabled || isBalanceInvalid))
                             ? 'bg-black/20 text-white cursor-not-allowed'
                             : 'bg-black text-white hover:bg-black/90'
                     }`}
                     style={{ letterSpacing: "-0.43px" }}
                 >
-                    {isEditMode ? "Save Changes" : "Edit Payout Settings"}
+                    {saving ? "Saving..." : (isEditMode ? "Save Changes" : "Edit Payout Settings")}
                 </button>
 
                 <button

@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
+import { supabase } from "../lib/supabase";
 import earningsIcon from "../assets/earnings.svg";
 import homeIcon from "../assets/home.svg";
 import notificationsIcon from "../assets/notifications.svg";
@@ -11,52 +13,144 @@ import targetIcon from "../assets/target.png";
 
 const Earnings = () => {
     const navigate = useNavigate();
+    const { riderId } = useAuth();
     const [activeTab, setActiveTab] = useState("earnings");
     const [earningType, setEarningType] = useState("daily");
-    const [currentWeekIndex, setCurrentWeekIndex] = useState(0);
+    const [loading, setLoading] = useState(true);
 
-    const overviewData = [
-        {
-            range: "09 Mar - 15 Mar",
-            totalEarnings: 22750,
-            hoursOnDuty: 32,
-            deliveries: 46,
-            avgHourly: 710,
-            bonus: 450
-        },
-        {
-            range: "02 Mar - 08 Mar",
-            totalEarnings: 18500,
-            hoursOnDuty: 28,
-            deliveries: 38,
-            avgHourly: 660,
-            bonus: 300
-        },
-        {
-            range: "23 Feb - 01 Mar",
-            totalEarnings: 25200,
-            hoursOnDuty: 35,
-            deliveries: 52,
-            avgHourly: 720,
-            bonus: 500
+    const [overview, setOverview] = useState<any>(null);
+    const [dailyEarnings, setDailyEarnings] = useState<any[]>([]);
+    const [weeklyEarnings, setWeeklyEarnings] = useState<any[]>([]);
+
+    const getCurrentWeekRange = () => {
+        const now = new Date();
+        const day = now.getDay();
+        const diff = day === 0 ? -6 : 1 - day; // adjust for Monday start
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + diff);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        return {
+            start: monday.toISOString().split('T')[0],
+            end: sunday.toISOString().split('T')[0]
+        };
+    };
+
+    const { start, end } = getCurrentWeekRange();
+    const [weekStart, setWeekStart] = useState(start);
+    const [weekEnd, setWeekEnd] = useState(end);
+
+    const formatDateRange = (start: string, end: string) => {
+        if (!start || !end) return "---";
+        const d1 = new Date(start);
+        const d2 = new Date(end);
+        const f = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short' });
+        return `${f.format(d1)} - ${f.format(d2)}`;
+    };
+
+    const fetchOverview = useCallback(async (start?: string, end?: string) => {
+        if (!riderId) return;
+        try {
+            const { data, error } = await supabase.functions.invoke('get-rider-earnings', {
+                body: { 
+                    riderId, 
+                    type: (start && end) ? 'weekly' : 'overview',
+                    weekStart: start,
+                    weekEnd: end
+                }
+            });
+            if (error) throw error;
+            
+            if (start && end) {
+                // If we fetched a specific week, update overview stats
+                setOverview((prev: any) => ({
+                    ...prev,
+                    totalEarnings: data.total_earnings,
+                    orderEarnings: data.order_earnings,
+                    totalTips: data.total_tips,
+                    deliveryCount: data.delivery_count,
+                    avgPerHour: data.total_hours > 0 ? (data.total_earnings / data.total_hours) : 0,
+                }));
+            } else {
+                setOverview(data);
+                setWeekStart(data.weekStart);
+                setWeekEnd(data.weekEnd);
+            }
+        } catch (err) {
+            console.error("Error fetching overview:", err);
         }
-    ];
+    }, [riderId]);
 
-    const currentWeek = overviewData[currentWeekIndex];
+    const fetchBreakdown = useCallback(async () => {
+        if (!riderId || !weekStart || !weekEnd) return;
+        try {
+            if (earningType === "daily") {
+                const { data, error } = await supabase.functions.invoke('get-rider-earnings', {
+                    body: { riderId, type: 'daily', weekStart, weekEnd }
+                });
+                if (error) throw error;
+                setDailyEarnings(data.map((item: any) => ({
+                    date: new Date(item.day).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }),
+                    subtext: "0 hours online", // Placeholder
+                    amount: item.total_earnings,
+                    rawDate: item.day,
+                    orderEarnings: item.order_earnings,
+                    tips: item.total_tips,
+                    deliveryCount: item.delivery_count
+                })));
+            } else {
+                const { data, error } = await supabase.functions.invoke('get-rider-earnings', {
+                    body: { riderId, type: 'weeks-list' }
+                });
+                if (error) throw error;
+                setWeeklyEarnings(data.map((item: any) => ({
+                    date: formatDateRange(item.week_start, item.week_end),
+                    subtext: "0 hours online", // Placeholder
+                    amount: item.total_earnings,
+                    weekStart: item.week_start,
+                    weekEnd: item.week_end,
+                    deliveryCount: item.delivery_count
+                })));
+            }
+        } catch (err) {
+            console.error("Error fetching breakdown:", err);
+        }
+    }, [riderId, weekStart, weekEnd, earningType]);
 
-    const dailyEarnings = [
-        { date: "Thursday, 6 Nov", subtext: "7 hours online", amount: 1750 },
-        { date: "Wednesday, 5 Nov", subtext: "10 hours online", amount: 2550 },
-        { date: "Tuesday, 4 Nov", subtext: "8 hours online", amount: 850 },
-        { date: "Monday, 3 Nov", subtext: "6 hours online", amount: 1200 },
-        { date: "Sunday, 2 Nov", subtext: "5 hours online", amount: 950 },
-    ];
+    useEffect(() => {
+        const load = async () => {
+            setLoading(true);
+            await fetchOverview();
+            setLoading(false);
+        };
+        load();
+    }, [fetchOverview]);
 
-    const weeklyEarnings = [
-        { date: "03 Nov - 09 Nov", subtext: "42 hours online", amount: 12450 },
-        { date: "27 Oct - 02 Nov", subtext: "38 hours online", amount: 10200 },
-        { date: "20 Oct - 26 Oct", subtext: "45 hours online", amount: 13150 },
-    ];
+    useEffect(() => {
+        fetchBreakdown();
+    }, [fetchBreakdown]);
+
+    const navigateWeek = (direction: 'prev' | 'next') => {
+        const current = new Date(weekStart);
+        if (isNaN(current.getTime())) return;
+        
+        const days = direction === 'prev' ? -7 : 7;
+        const newStart = new Date(current);
+        newStart.setDate(newStart.getDate() + days);
+        
+        const newEnd = new Date(newStart);
+        newEnd.setDate(newStart.getDate() + 6);
+        
+        // Prevent navigating to future weeks
+        if (direction === 'next' && newStart > new Date()) return;
+        
+        const startStr = newStart.toISOString().split('T')[0];
+        const endStr = newEnd.toISOString().split('T')[0];
+        
+        setWeekStart(startStr);
+        setWeekEnd(endStr);
+        fetchOverview(startStr, endStr);
+    };
 
     const navItems = [
         { id: "home", label: "Home", icon: homeIcon, path: "/dashboard" },
@@ -112,7 +206,7 @@ const Earnings = () => {
                     <div className="mt-[13px] px-[13px] flex items-center justify-between w-full">
                         {/* Back Button */}
                         <button 
-                            onClick={() => setCurrentWeekIndex(prev => Math.min(prev + 1, overviewData.length - 1))}
+                            onClick={() => navigateWeek('prev')}
                             className="w-[22px] h-[22px] rounded-full bg-[#5260FE]/[0.21] flex items-center justify-center transition-transform active:scale-95 shrink-0"
                         >
                             <img src={chevronBackward} alt="Back" className="w-[20px] h-[20px]" />
@@ -120,12 +214,12 @@ const Earnings = () => {
 
                         {/* Week Range */}
                         <span className="text-[14px] font-bold text-[#5260FE] leading-none" style={{ letterSpacing: "-0.43px" }}>
-                            {currentWeek.range}
+                            {formatDateRange(weekStart, weekEnd)}
                         </span>
 
                         {/* Forward Button */}
                         <button 
-                            onClick={() => setCurrentWeekIndex(prev => Math.max(prev - 1, 0))}
+                            onClick={() => navigateWeek('next')}
                             className="w-[22px] h-[22px] rounded-full bg-[#5260FE]/[0.21] flex items-center justify-center transition-transform active:scale-95 shrink-0"
                         >
                             <img src={chevronForward} alt="Forward" className="w-[20px] h-[20px]" />
@@ -170,7 +264,7 @@ const Earnings = () => {
                                 className="mt-[9px] text-[24px] font-bold text-black leading-none"
                                 style={{ letterSpacing: "-0.43px" }}
                             >
-                                ₹{currentWeek.totalEarnings.toLocaleString()}
+                                ₹{overview?.totalEarnings?.toLocaleString() || "0"}
                             </span>
 
                             {/* Hours on Duty: 3px below amount */}
@@ -178,7 +272,7 @@ const Earnings = () => {
                                 className="mt-[3px] text-[14px] font-medium text-black/50"
                                 style={{ letterSpacing: "-0.43px" }}
                             >
-                                {currentWeek.hoursOnDuty} hours on duty
+                                0 hours on duty
                             </span>
                         </div>
 
@@ -201,7 +295,7 @@ const Earnings = () => {
                                         </div>
                                         <span className="text-[12px] font-medium text-black leading-none" style={{ letterSpacing: "-0.43px" }}>Deliveries</span>
                                     </div>
-                                    <span className="text-[14px] font-bold text-black leading-none" style={{ letterSpacing: "-0.43px" }}>{currentWeek.deliveries}</span>
+                                    <span className="text-[14px] font-bold text-black leading-none" style={{ letterSpacing: "-0.43px" }}>{overview?.deliveryCount || 0}</span>
                                 </div>
 
                                 {/* Avg/hours */}
@@ -212,7 +306,7 @@ const Earnings = () => {
                                         </div>
                                         <span className="text-[12px] font-medium text-black leading-none" style={{ letterSpacing: "-0.43px" }}>Avg/hours</span>
                                     </div>
-                                    <span className="text-[14px] font-bold text-black leading-none" style={{ letterSpacing: "-0.43px" }}>₹{currentWeek.avgHourly}/hr</span>
+                                    <span className="text-[14px] font-bold text-black leading-none" style={{ letterSpacing: "-0.43px" }}>₹{Math.round(overview?.avgPerHour || 0)}/hr</span>
                                 </div>
 
                                 {/* Bonus earned */}
@@ -223,7 +317,7 @@ const Earnings = () => {
                                         </div>
                                         <span className="text-[12px] font-medium text-black leading-none" style={{ letterSpacing: "-0.43px" }}>Bonus earned</span>
                                     </div>
-                                    <span className="text-[14px] font-bold text-black leading-none" style={{ letterSpacing: "-0.43px" }}>₹{currentWeek.bonus}</span>
+                                    <span className="text-[14px] font-bold text-black leading-none" style={{ letterSpacing: "-0.43px" }}>₹{overview?.totalTips || 0}</span>
                                 </div>
                             </div>
                         </div>
@@ -246,14 +340,17 @@ const Earnings = () => {
                             onClick={() => navigate("/earnings-detail", { 
                                 state: { 
                                     title: "Week earnings",
-                                    dateDisplay: currentWeek.range,
-                                    amount: currentWeek.totalEarnings,
-                                    hoursDisplay: `${currentWeek.hoursOnDuty} hours on duty`,
+                                    dateDisplay: formatDateRange(weekStart, weekEnd),
+                                    amount: overview?.totalEarnings || 0,
+                                    hoursDisplay: "0 hours on duty",
                                     breakdown: {
-                                        orderEarnings: 18000,
-                                        tips: 4750
+                                        orderEarnings: overview?.orderEarnings || 0,
+                                        tips: overview?.totalTips || 0
                                     },
-                                    deliveries: currentWeek.deliveries
+                                    deliveries: overview?.deliveryCount || 0,
+                                    weekStart,
+                                    weekEnd,
+                                    type: 'weekly'
                                 } 
                             })}
                             className="text-[14px] font-medium text-[#5260FE] transition-transform active:scale-95"
@@ -274,7 +371,7 @@ const Earnings = () => {
                             className="absolute top-[14px] right-[14px] text-[16px] font-bold text-black leading-none" 
                             style={{ letterSpacing: "-0.43px" }}
                         >
-                            ₹{currentWeek.totalEarnings.toLocaleString()}
+                            ₹{(overview?.walletBalance || 0).toLocaleString()}
                         </span>
                     </div>
                     
@@ -286,10 +383,10 @@ const Earnings = () => {
                     {/* CTA Button */}
                     <div className="mt-[18px] flex justify-center">
                         <button 
-                            onClick={() => navigate("/wallet", { state: { amount: currentWeek.totalEarnings } })}
+                            onClick={() => navigate("/wallet", { state: { amount: overview?.walletBalance || 0 } })}
                             className="w-[335px] h-[44px] rounded-full flex items-center justify-center text-[16px] font-medium transition-transform active:scale-95 bg-[#5260FE] text-white"
                             style={{ 
-                                boxShadow: '0px_4px_12px_rgba(82,96,254,0.2)' 
+                                boxShadow: '0px 4px 12px rgba(82,96,254,0.2)' 
                             }}
                         >
                             View Wallet
@@ -345,19 +442,18 @@ const Earnings = () => {
                                             onClick={() => navigate("/earnings-detail", { 
                                                 state: { 
                                                     title: earningType === "daily" ? item.date : "Week earnings",
-                                                    dateDisplay: earningType === "daily" ? item.date : item.date,
+                                                    dateDisplay: item.date,
                                                     amount: item.amount,
                                                     hoursDisplay: item.subtext.includes("duty") ? item.subtext : `${item.subtext.replace(" online", "")} on duty`,
-                                                    breakdown: earningType === "daily" 
-                                                        ? {
-                                                            orderEarnings: Math.round(item.amount * 0.85),
-                                                            tips: item.amount - Math.round(item.amount * 0.85)
-                                                          }
-                                                        : {
-                                                            orderEarnings: Math.round(item.amount * 0.84),
-                                                            tips: item.amount - Math.round(item.amount * 0.84)
-                                                          },
-                                                    deliveries: earningType === "weekly" ? 46 : 5 // Defaulting to some logical numbers for now as mock data doesn't have it
+                                                    breakdown: {
+                                                        orderEarnings: item.orderEarnings || Math.round(item.amount * 0.85),
+                                                        tips: item.tips || (item.amount - Math.round(item.amount * 0.85))
+                                                    },
+                                                    deliveries: item.deliveryCount,
+                                                    type: earningType === "daily" ? 'daily' : 'weekly',
+                                                    date: item.rawDate,
+                                                    weekStart: item.weekStart,
+                                                    weekEnd: item.weekEnd
                                                 } 
                                             })}
                                             className="w-[32px] h-[32px] rounded-full bg-[#5260FE]/15 flex items-center justify-center transition-transform active:scale-90"

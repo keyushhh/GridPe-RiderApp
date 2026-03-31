@@ -1,0 +1,4 @@
+export const INSTANT_WITHDRAWAL_MIN = 500;
+export const INSTANT_WITHDRAWAL_MAX = 15000;
+export const INSTANT_WITHDRAWAL_FEE = 20;
+export const INSTANT_WITHDRAWAL_TDS = 0;

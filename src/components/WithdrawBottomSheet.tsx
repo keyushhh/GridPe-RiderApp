@@ -1,5 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../context/ToastContext';
+import { 
+  INSTANT_WITHDRAWAL_MIN, 
+  INSTANT_WITHDRAWAL_MAX, 
+  INSTANT_WITHDRAWAL_FEE, 
+  INSTANT_WITHDRAWAL_TDS 
+} from '../constants/withdrawal';
 
 interface WithdrawBottomSheetProps {
   isOpen: boolean;
@@ -15,9 +24,13 @@ const WithdrawBottomSheet: React.FC<WithdrawBottomSheetProps> = ({
   availableBalance
 }) => {
   const navigate = useNavigate();
+  const { riderId } = useAuth();
+  const { showToast } = useToast();
+  
   const [withdrawAmount, setWithdrawAmount] = useState(900);
   const [inputValue, setInputValue] = useState('900');
   const [isAnimating, setIsAnimating] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [dragY, setDragY] = useState(0);
   const startY = React.useRef(0);
 
@@ -25,10 +38,15 @@ const WithdrawBottomSheet: React.FC<WithdrawBottomSheetProps> = ({
     if (isOpen) {
       setIsAnimating(true);
       setDragY(0);
+      // Clamp initial 900 if balance is lower (but >= 500)
+      if (availableBalance >= 500 && availableBalance < 900) {
+        setWithdrawAmount(availableBalance);
+        setInputValue(availableBalance.toString());
+      }
     } else {
       setTimeout(() => setIsAnimating(false), 300);
     }
-  }, [isOpen]);
+  }, [isOpen, availableBalance]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     startY.current = e.touches[0].clientY;
@@ -64,13 +82,46 @@ const WithdrawBottomSheet: React.FC<WithdrawBottomSheetProps> = ({
     }
   };
 
+  const handleContinue = async () => {
+    if (!riderId) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('process-instant-withdrawal', {
+        body: { riderId, amount: withdrawAmount }
+      });
+
+      if (error || !data.success) {
+        throw new Error(error?.message || data.error || "Withdrawal failed");
+      }
+
+      onConfirm(withdrawAmount);
+      onClose();
+      navigate('/withdraw-success', { 
+        state: { 
+          amount: withdrawAmount,
+          finalAmount: data.finalAmount,
+          bankName: data.bankName,
+          accountMasked: data.accountMasked,
+          referenceId: data.referenceId,
+          newBalance: data.newBalance
+        } 
+      });
+    } catch (err: any) {
+      console.error("Withdrawal error:", err);
+      showToast(err.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!isOpen && !isAnimating) return null;
 
-  const minWithdrawal = 500;
-  const maxWithdrawal = 15000;
-  const isError = withdrawAmount < minWithdrawal || withdrawAmount > maxWithdrawal || (inputValue === '');
-  const platformFee = 25;
-  const tds = 0;
+  const minWithdrawal = INSTANT_WITHDRAWAL_MIN;
+  const maxLimit = Math.min(INSTANT_WITHDRAWAL_MAX, availableBalance);
+  
+  const isError = withdrawAmount < minWithdrawal || withdrawAmount > INSTANT_WITHDRAWAL_MAX || withdrawAmount > availableBalance || (inputValue === '');
+  const platformFee = INSTANT_WITHDRAWAL_FEE;
+  const tds = INSTANT_WITHDRAWAL_TDS;
   const finalAmount = Math.max(0, withdrawAmount - platformFee - tds);
   const balanceAfter = availableBalance - withdrawAmount;
 
@@ -146,7 +197,7 @@ const WithdrawBottomSheet: React.FC<WithdrawBottomSheetProps> = ({
                 />
               </div>
               <span className="mt-[4px] text-[14px] font-medium text-[#A0A0A0]">
-                Available balance after transfer: ₹{balanceAfter.toLocaleString()}
+                Available balance after transfer: ₹{Math.max(0, balanceAfter).toLocaleString()}
               </span>
             </div>
 
@@ -155,18 +206,18 @@ const WithdrawBottomSheet: React.FC<WithdrawBottomSheetProps> = ({
               <input
                 type="range"
                 min={minWithdrawal}
-                max={maxWithdrawal}
+                max={Math.max(minWithdrawal, maxLimit)}
                 step={100}
-                value={withdrawAmount > maxWithdrawal ? maxWithdrawal : withdrawAmount}
+                value={withdrawAmount > maxLimit ? maxLimit : withdrawAmount}
                 onChange={handleSliderChange}
                 className="w-full h-[6px] rounded-full appearance-none cursor-pointer accent-[#5260FE]"
                 style={{
-                  background: `linear-gradient(to right, #5260FE 0%, #5260FE ${((withdrawAmount - minWithdrawal) / (maxWithdrawal - minWithdrawal)) * 100}%, #E0E0E0 ${((withdrawAmount - minWithdrawal) / (maxWithdrawal - minWithdrawal)) * 100}%, #E0E0E0 100%)`
+                  background: `linear-gradient(to right, #5260FE 0%, #5260FE ${((withdrawAmount - minWithdrawal) / (Math.max(minWithdrawal, maxLimit) - minWithdrawal)) * 100}%, #E0E0E0 ${((withdrawAmount - minWithdrawal) / (Math.max(minWithdrawal, maxLimit) - minWithdrawal)) * 100}%, #E0E0E0 100%)`
                 }}
               />
               <div className="mt-[8px] flex justify-between w-full">
                 <span className="text-[14px] font-medium text-[#A0A0A0]">₹500</span>
-                <span className="text-[14px] font-medium text-[#A0A0A0]">₹15,000</span>
+                <span className="text-[14px] font-medium text-[#A0A0A0]">₹{INSTANT_WITHDRAWAL_MAX.toLocaleString()}</span>
               </div>
             </div>
 
@@ -207,15 +258,12 @@ const WithdrawBottomSheet: React.FC<WithdrawBottomSheetProps> = ({
 
             {/* Continue Button */}
             <button
-              onClick={() => {
-                onConfirm(withdrawAmount);
-                navigate('/withdraw-success', { state: { amount: withdrawAmount } });
-              }}
-              disabled={isError}
+              onClick={handleContinue}
+              disabled={isError || loading}
               className={`mt-[16px] w-full h-[44px] rounded-full font-medium text-[16px] active:scale-[0.98] transition-all shadow-[0px_4px_12px_rgba(82,96,254,0.2)]
-                ${isError ? 'bg-[#DFDFDF] text-white cursor-not-allowed' : 'bg-[#5260FE] text-white'}`}
+                ${(isError || loading) ? 'bg-[#DFDFDF] text-white cursor-not-allowed' : 'bg-[#5260FE] text-white'}`}
             >
-              Continue
+              {loading ? 'Processing...' : 'Continue'}
             </button>
           </>
         )}

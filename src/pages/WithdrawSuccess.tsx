@@ -3,11 +3,20 @@ import { useNavigate, useLocation } from "react-router-dom";
 import successCheckIcon from "../assets/success-check.svg";
 import downloadIcon from "../assets/download.svg";
 
-// Forced re-save to trigger index update
 const WithdrawSuccess: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
-    const amount = location.state?.amount || 0;
+    
+    // Extract data from navigation state
+    const { 
+        amount = 0, 
+        finalAmount = 0, 
+        bankName = "Bank", 
+        accountMasked = "****", 
+        referenceId = "N/A",
+        newBalance = 0 
+    } = location.state || {};
+
     const [timeLeft, setTimeLeft] = useState(30);
 
     useEffect(() => {
@@ -22,7 +31,14 @@ const WithdrawSuccess: React.FC = () => {
     }, [timeLeft]);
 
     const handleRedirect = () => {
-        navigate("/wallet", { state: { withdrawnAmount: amount }, replace: true });
+        // Pass newBalance back to Wallet for instant UI update
+        navigate("/wallet", { 
+            state: { 
+                withdrawnAmount: amount,
+                newBalance: newBalance
+            }, 
+            replace: true 
+        });
     };
 
     return (
@@ -60,7 +76,13 @@ const WithdrawSuccess: React.FC = () => {
                 {/* Description */}
                 <div className="w-[326px] mx-auto mb-[40px]">
                     <p className="text-[#616161] text-[16px] font-medium text-center leading-[1.4]" style={{ letterSpacing: "-0.43px" }}>
-                        You have successfully withdrawn ₹{amount.toLocaleString()}. Here's your transaction number for future reference purposes: #GRDPE-RDR-PYOUT12345
+                        You have successfully withdrawn ₹{amount.toLocaleString()}. 
+                        <br /><br />
+                        <span className="text-black font-bold">₹{finalAmount.toLocaleString()}</span> will be credited to:
+                        <br />
+                        {bankName} (XXXX {accountMasked.slice(-4)})
+                        <br /><br />
+                        Reference: <span className="text-black font-bold">#{referenceId}</span>
                     </p>
                 </div>
 
