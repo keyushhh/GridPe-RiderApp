@@ -206,7 +206,13 @@ const AccountSettings = () => {
     const [tempPhone, setTempPhone] = useState("");
     const [phoneOtp, setPhoneOtp] = useState(['', '', '', '', '', '']);
     const phoneOtpInputs = useRef<(HTMLInputElement | null)[]>([]);
-    const [isTwoStepEnabled, setIsTwoStepEnabled] = useState(true);
+    const [isTwoStepEnabled, setIsTwoStepEnabled] = useState(false);
+    const [selectedMethod, setSelectedMethod] = useState<'sms' | 'auth'>('sms');
+    const [backupCodes, setBackupCodes] = useState<{ code: string; used: boolean }[]>([]);
+    const [isBackupCodesChecked, setIsBackupCodesChecked] = useState(false);
+    const [fromDashboard, setFromDashboard] = useState(false);
+    const [isSettingUpSms, setIsSettingUpSms] = useState(false);
+    const [isRegeneratingCodes, setIsRegeneratingCodes] = useState(false);
 
     useEffect(() => {
         if (activeTab === "Personal Info" || activeTab === "Security" || activeTab === "Home") {
@@ -245,9 +251,6 @@ const AccountSettings = () => {
         }
     }, [securityStep]);
 
-    const [backupCodes, setBackupCodes] = useState<string[]>(Array(8).fill("2150-7122"));
-    const [fromDashboard, setFromDashboard] = useState(false);
-    const [selectedMethod, setSelectedMethod] = useState<'sms' | 'auth'>('sms');
     const [isDeletePopupOpen, setIsDeletePopupOpen] = useState(false);
     const [isSuccessPopupOpen, setIsSuccessPopupOpen] = useState(false);
     const [accountToDelete, setAccountToDelete] = useState<any>(null);
@@ -277,39 +280,25 @@ const AccountSettings = () => {
         initCorbado();
     }, []);
 
-    // Persistence Logic
-    useEffect(() => {
-        if (!phoneNumber) return;
-        const storageKey = `gridpe_security_${phoneNumber}`;
-        const saved = localStorage.getItem(storageKey);
-        if (saved) {
-            const data = JSON.parse(saved);
-            if (data.isTwoStepEnabled !== undefined) setIsTwoStepEnabled(data.isTwoStepEnabled);
-            if (data.isAuthenticatorActive !== undefined) setIsAuthenticatorActive(data.isAuthenticatorActive);
-            if (data.selectedMethod !== undefined) setSelectedMethod(data.selectedMethod);
-            if (data.backupCodes !== undefined) setBackupCodes(data.backupCodes);
+
+
+    const generateNewCodes = async () => {
+        if (!dynamicRiderId || dynamicRiderId === "Loading...") return;
+        setIsRegeneratingCodes(true);
+        try {
+            const { data, error } = await supabase.functions.invoke('regenerate-backup-codes', {
+                body: { riderId: dynamicRiderId }
+            });
+            if (error) throw error;
+            if (data?.backupCodes) {
+                setBackupCodes(data.backupCodes);
+            }
+        } catch (err) {
+            console.error('Failed to regenerate codes:', err);
+            showToast('Failed to regenerate backup codes.', 'error');
+        } finally {
+            setIsRegeneratingCodes(false);
         }
-    }, [phoneNumber]);
-
-    useEffect(() => {
-        if (!phoneNumber) return;
-        const storageKey = `gridpe_security_${phoneNumber}`;
-        const data = {
-            isTwoStepEnabled,
-            isAuthenticatorActive,
-            selectedMethod,
-            backupCodes
-        };
-        localStorage.setItem(storageKey, JSON.stringify(data));
-    }, [phoneNumber, isTwoStepEnabled, isAuthenticatorActive, selectedMethod, backupCodes]);
-
-    const generateNewCodes = () => {
-        const newCodes = Array(8).fill(0).map(() => {
-            const part1 = Math.floor(1000 + Math.random() * 9000);
-            const part2 = Math.floor(1000 + Math.random() * 9000);
-            return `${part1}-${part2}`;
-        });
-        setBackupCodes(newCodes);
     };
 
     const fetchBankAccounts = async () => {
@@ -520,15 +509,19 @@ const AccountSettings = () => {
         const fetchRiderData = async () => {
             if (!riderUuid) return;
             try {
+                // Fetch fresh security data directly from DB
                 const { data, error } = await supabase
                     .from('riders')
-                    .select('rider_id, has_passkeys')
+                    .select('rider_id, has_passkeys, two_fa_enabled, two_fa_method, backup_codes')
                     .eq('id', riderUuid)
                     .maybeSingle();
                 
                 if (data) {
                     if (data.rider_id) setDynamicRiderId(data.rider_id);
                     if (data.has_passkeys !== undefined) setHasPasskeys(data.has_passkeys);
+                    if (data.two_fa_enabled !== undefined) setIsTwoStepEnabled(!!data.two_fa_enabled);
+                    if (data.two_fa_method) setSelectedMethod(data.two_fa_method as 'sms' | 'auth');
+                    if (data.backup_codes) setBackupCodes(data.backup_codes);
                 } else if (!error) {
                     setDynamicRiderId("GRIDPE-RDR1023"); // Fallback if no ID yet
                 }
@@ -536,8 +529,10 @@ const AccountSettings = () => {
                 console.error('Error fetching rider data:', err);
             }
         };
+
+        // Always fetch on mount/tab change if we have a riderUuid
         fetchRiderData();
-    }, [riderUuid]);
+    }, [riderUuid, activeTab]); // Re-fetch when switching tabs (e.g. going back to Security)
 
     // Fetch login sessions on Security tab mount
     useEffect(() => {
@@ -1120,6 +1115,7 @@ const AccountSettings = () => {
                                 </div>
 
                                 {/* Logging in Section: 18px below */}
+                        {/* Logging in Section: 18px below */}
                                 <h2 className="mt-[18px] text-black font-bold text-[22px] leading-tight">
                                     Logging in to Grid.pe
                                 </h2>
@@ -1182,15 +1178,28 @@ const AccountSettings = () => {
                                     {/* 2-step verification */}
                                     <div
                                         className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
-                                        onClick={() => setSecurityStep("two_step_intro")}
+                                        onClick={() => {
+                                            if (isTwoStepEnabled) {
+                                                setSecurityStep("two_step_dashboard");
+                                            } else {
+                                                setSecurityStep("two_step_intro");
+                                            }
+                                        }}
                                     >
                                         <div className="flex flex-col items-start text-left">
                                             <span className="text-black font-medium text-[14px] leading-tight">2-step verification</span>
                                             <span className="mt-[2px] text-black/50 font-medium text-[12px] leading-tight w-[267px]">
-                                                Add additional security to your account with 2-step verification.
+                                                {isTwoStepEnabled ? "2-step verification is active" : "Add additional security to your account with 2-step verification."}
                                             </span>
                                         </div>
-                                        <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
+                                        <div className="flex items-center gap-2">
+                                            {isTwoStepEnabled && (
+                                                <div className="h-[24px] px-[12px] bg-[#E8F5E9] rounded-full flex items-center justify-center">
+                                                    <span className="text-[#2E7D32] text-[12px] font-bold italic">Enabled</span>
+                                                </div>
+                                            )}
+                                            <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1847,17 +1856,40 @@ const AccountSettings = () => {
                                 {/* Next Button */}
                                 <div className="mt-auto pb-[32px] w-full">
                                     <button
-                                        className={`w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98] ${phoneOtp.join('').length === 6 ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}
-                                        onClick={() => {
+                                        className={`w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98] ${(phoneOtp.join('').length === 6 && !isSettingUpSms) ? 'opacity-100' : 'opacity-50 pointer-events-none'} flex items-center justify-center`}
+                                        disabled={phoneOtp.join('').length !== 6 || isSettingUpSms}
+                                        onClick={async () => {
                                             if (phoneOtp.join('') === "123456") {
-                                                setSecurityStep("two_step_backup_codes");
-                                                setPhoneOtp(['', '', '', '', '', '']);
+                                                setIsSettingUpSms(true);
+                                                try {
+                                                    const { data, error } = await supabase.functions.invoke('setup-sms-2fa', {
+                                                        body: { 
+                                                            riderId: dynamicRiderId,
+                                                            phoneNumber: `+91${tempPhone}`
+                                                        }
+                                                    });
+                                                    if (error) throw error;
+                                                    if (data?.backupCodes) {
+                                                        setBackupCodes(data.backupCodes);
+                                                        setFromDashboard(false);
+                                                        setIsBackupCodesChecked(false);
+                                                        setSecurityStep("two_step_backup_codes");
+                                                        setPhoneOtp(['', '', '', '', '', '']);
+                                                    }
+                                                } catch (err) {
+                                                    console.error('Failed to setup SMS 2FA:', err);
+                                                    showToast('Failed to enable 2-step verification.', 'error');
+                                                } finally {
+                                                    setIsSettingUpSms(false);
+                                                }
                                             } else {
-                                                alert("Invalid OTP. Try 123456");
+                                                showToast("Invalid OTP. Try 123456", "error");
                                             }
                                         }}
                                     >
-                                        Next
+                                        {isSettingUpSms ? (
+                                            <div className="w-[20px] h-[20px] border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        ) : "Next"}
                                     </button>
                                 </div>
                             </div>
@@ -1875,32 +1907,57 @@ const AccountSettings = () => {
                                     Screenshot these codes and store them in a safe place. If you have trouble receiving a verification code, you can use one of these codes instead. Each code can only be used once. <span className="font-bold underline cursor-pointer">Learn more</span>
                                 </p>
 
-                                {/* Backup Codes List */}
-                                <div className="mt-[32px] flex flex-col gap-[8px]">
-                                    {backupCodes.map((code, i) => (
-                                        <span key={i} className="text-black font-bold text-[22px] leading-tight text-left">
-                                            {code}
-                                        </span>
-                                    ))}
-                                </div>
+                                 {/* Backup Codes List */}
+                                 <div className="mt-[32px] grid grid-cols-2 gap-x-[20px] gap-y-[12px]">
+                                     {backupCodes.map((item, i) => (
+                                         <span 
+                                            key={i} 
+                                            className={`text-black font-bold text-[20px] leading-tight text-left ${item.used ? 'opacity-30 line-through' : 'opacity-100'}`}
+                                         >
+                                             {item.code}
+                                         </span>
+                                     ))}
+                                 </div>
 
-                                {/* Buttons at bottom */}
-                                <div className="mt-auto pb-[32px] flex flex-col gap-[12px] w-full">
-                                    {!fromDashboard && (
-                                        <button
-                                            className="w-full h-[48px] rounded-full bg-[#5260FE] text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
-                                            onClick={() => setSecurityStep("two_step_dashboard")}
-                                        >
-                                            Save
-                                        </button>
-                                    )}
-                                    <button
-                                        className={`w-full h-[48px] rounded-full border border-[#5260FE] bg-white text-[#5260FE] font-medium text-[16px] transition-transform active:scale-[0.98] ${fromDashboard ? 'mt-auto' : ''}`}
-                                        onClick={generateNewCodes}
-                                    >
-                                        Get new codes
-                                    </button>
-                                </div>
+                                 {/* Checkbox for Setup flow */}
+                                 {!fromDashboard && (
+                                     <div 
+                                        className="mt-[32px] flex items-center gap-[12px] cursor-pointer"
+                                        onClick={() => setIsBackupCodesChecked(!isBackupCodesChecked)}
+                                     >
+                                         <div className={`w-[20px] h-[20px] rounded-[4px] border ${isBackupCodesChecked ? 'bg-[#5260FE] border-[#5260FE]' : 'border-[#E6E8EB]'} flex items-center justify-center transition-colors shrink-0`}>
+                                             {isBackupCodesChecked && <div className="w-[10px] h-[5px] border-l-2 border-b-2 border-white -rotate-45 mb-[2px]" />}
+                                         </div>
+                                         <span className="text-black font-medium text-[14px] leading-tight">
+                                             I have saved these backup codes in a safe place
+                                         </span>
+                                     </div>
+                                 )}
+ 
+                                 {/* Buttons at bottom */}
+                                 <div className="mt-auto pb-[32px] flex flex-col gap-[12px] w-full">
+                                     {!fromDashboard && (
+                                         <button
+                                             className={`w-full h-[48px] rounded-full font-medium text-[16px] transition-transform active:scale-[0.98] ${isBackupCodesChecked ? 'bg-[#5260FE] text-white' : 'bg-[#E0E2FF] text-white cursor-not-allowed'}`}
+                                             disabled={!isBackupCodesChecked}
+                                             onClick={() => {
+                                                setIsTwoStepEnabled(true);
+                                                setSecurityStep("two_step_dashboard");
+                                             }}
+                                         >
+                                             Save
+                                         </button>
+                                     )}
+                                     <button
+                                         className={`w-full h-[48px] rounded-full border border-[#5260FE] bg-white text-[#5260FE] font-medium text-[16px] transition-transform active:scale-[0.98] flex items-center justify-center ${fromDashboard ? 'mt-auto' : ''}`}
+                                         onClick={generateNewCodes}
+                                         disabled={isRegeneratingCodes}
+                                     >
+                                         {isRegeneratingCodes ? (
+                                             <div className="w-[20px] h-[20px] border-2 border-[#5260FE]/30 border-t-[#5260FE] rounded-full animate-spin" />
+                                         ) : "Get new codes"}
+                                     </button>
+                                 </div>
                             </div>
                         ) : securityStep === "two_step_dashboard" ? (
                             <div className="w-full flex-1 flex flex-col">
@@ -1922,7 +1979,22 @@ const AccountSettings = () => {
                                     <span className="text-black font-bold text-[16px]">2-step verification</span>
                                     <div
                                         className={`w-[50px] h-[24px] rounded-full relative cursor-pointer transition-colors duration-200 ${isTwoStepEnabled ? 'bg-[#4CD964]' : 'bg-[#E9E9EB]'}`}
-                                        onClick={() => setIsTwoStepEnabled(!isTwoStepEnabled)}
+                                        onClick={async () => {
+                                            const newState = !isTwoStepEnabled;
+                                            try {
+                                                if (!newState) {
+                                                    const { error } = await supabase
+                                                        .from('riders')
+                                                        .update({ two_fa_enabled: false })
+                                                        .eq('rider_id', dynamicRiderId);
+                                                    if (error) throw error;
+                                                }
+                                                setIsTwoStepEnabled(newState);
+                                            } catch (err) {
+                                                console.error('Failed to toggle 2FA:', err);
+                                                showToast('Failed to update 2-step verification.', 'error');
+                                            }
+                                        }}
                                     >
                                         <div className={`absolute top-[2px] w-[20px] h-[20px] bg-white rounded-full shadow-md transition-transform duration-200 ${isTwoStepEnabled ? 'translate-x-[28px]' : 'translate-x-[2px]'}`} />
                                     </div>
@@ -1966,9 +2038,21 @@ const AccountSettings = () => {
                                 {/* Backup Codes Row */}
                                 <div
                                     className="mt-[35px] flex items-center justify-between cursor-pointer active:bg-gray-50 transition-colors"
-                                    onClick={() => {
+                                    onClick={async () => {
                                         setFromDashboard(true);
-                                        setSecurityStep("two_step_backup_codes");
+                                        try {
+                                            const { data, error } = await supabase.functions.invoke('get-backup-codes', {
+                                                body: { riderId: dynamicRiderId }
+                                            });
+                                            if (error) throw error;
+                                            if (data?.backupCodes) {
+                                                setBackupCodes(data.backupCodes);
+                                                setSecurityStep("two_step_backup_codes");
+                                            }
+                                        } catch (err) {
+                                            console.error('Failed to get backup codes:', err);
+                                            showToast('Failed to load backup codes.', 'error');
+                                        }
                                     }}
                                 >
                                     <div className="flex flex-col gap-[4px] pr-[20px]">
