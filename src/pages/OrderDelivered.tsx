@@ -1,16 +1,14 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import successCheckIcon from "../assets/success-check.svg";
 
 const OrderDelivered = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const [timeLeft, setTimeLeft] = useState(30);
 
-    useEffect(() => {
-        // Persist earnings as soon as the delivery success page is reached
-        const currentEarnings = Number(localStorage.getItem("rider_earnings")) || 0;
-        localStorage.setItem("rider_earnings", (currentEarnings + 120).toString());
-    }, []);
+    // Get real earnings data from route state
+    const { earnings = 0, tip = 0, totalEarned = 0 } = location.state || {};
 
     useEffect(() => {
         const timer = setInterval(() => {
@@ -64,13 +62,28 @@ const OrderDelivered = () => {
                     </h2>
                 </div>
 
-                {/* Subheading: 40px below main heading */}
-                <div className="w-[327px] mx-auto mb-[40px]">
+                {/* Subheading: 20px below main heading */}
+                <div className="w-[327px] mx-auto mb-[20px] flex flex-col items-center">
                     <p className="text-[#616161] text-[16px] font-medium text-center leading-[1.4]">
-                        You completed this order 2 minutes earlier than expected.
-                        <br />
-                        ₹120 has been added to your wallet.
+                        Great job! The order was delivered on time.
                     </p>
+                    
+                    <div className="mt-8 w-full flex flex-col gap-3">
+                        <div className="flex justify-between items-center w-full px-4">
+                            <span className="text-black/50 text-[14px] font-medium">Order Earnings:</span>
+                            <span className="text-black text-[14px] font-bold font-satoshi">INR {earnings}</span>
+                        </div>
+                        {tip > 0 && (
+                            <div className="flex justify-between items-center w-full px-4 text-[#0C7E4B]">
+                                <span className="text-[14px] font-medium">Customer Tip:</span>
+                                <span className="text-[14px] font-bold font-satoshi">+INR {tip}</span>
+                            </div>
+                        )}
+                        <div className="mt-2 pt-4 border-t border-[#EDEDED] flex justify-between items-center w-full px-4">
+                            <span className="text-black text-[16px] font-bold">Total Earned:</span>
+                            <span className="text-black text-[16px] font-bold font-satoshi">INR {totalEarned}</span>
+                        </div>
+                    </div>
                 </div>
 
                 {/* CTA Button: mt-auto to push to bottom */}

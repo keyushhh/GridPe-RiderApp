@@ -164,13 +164,13 @@ const Home = () => {
     const [orderStatus, setOrderStatus] = useState<'pickup_pending' | 'picked_up'>('pickup_pending');
     const [verificationType, setVerificationType] = useState<'pickup' | 'delivery'>('pickup');
     
-    // Helper to enrich order data (Hub Address + Delivery Address + Fix Earnings)
+    // Helper to enrich order data (Hub Details + Delivery Details + Financials)
     const enrichOrderData = async (order: any) => {
         if (!order) return null;
         
         let enriched = { ...order };
         
-        // 1. Fetch Hub Details using hub_id
+        // 1. Pickup Details (from pickup_location id)
         if (order.pickup_location) {
             try {
                 const { data: hubData } = await supabase
@@ -188,8 +188,8 @@ const Home = () => {
             }
         }
 
-        // 2. Fetch Delivery Address Details (Human readable)
-        if (order.address_id) {
+        // 2. Delivery Details (from delivery_address_text or address_id)
+        if (!enriched.delivery_address && order.address_id) {
             try {
                 const { data: addressData } = await supabase
                     .from('user_addresses')
@@ -203,18 +203,19 @@ const Home = () => {
             } catch (err) {
                 console.error('Delivery address fetch error:', err);
             }
+        } else if (order.delivery_address_text) {
+            enriched.delivery_address = order.delivery_address_text;
         }
 
-        // 3. Fix the "20k Bug" - Recalculate earnings
-        const distance = Number(order.distance_km || order.distance || 0);
-        const actualDist = (distance > 15) ? 2.1 : distance; 
-        const calculatedEarnings = Math.round(30 + (actualDist * 15));
+        // 3. Distance & Earnings Sync
+        const distance = Number(order.distance_km || order.distance || 2.1);
+        enriched.distance = distance;
         
-        if (!order.rider_earnings || order.rider_earnings > 1000) {
-            enriched.rider_earnings = calculatedEarnings;
-        }
+        // Ensure earnings are valid numbers
+        enriched.rider_earnings = Number(order.rider_earnings || 0);
+        enriched.delivery_tip = Number(order.delivery_tip || 0);
+        enriched.total_potential = enriched.rider_earnings + enriched.delivery_tip;
         
-        enriched.distance = actualDist;
         return enriched;
     };
     const [isAtHub, setIsAtHub] = useState(false);
@@ -398,7 +399,7 @@ const Home = () => {
     useEffect(() => {
         const handleNewTx = (e: any) => {
             const tx = e.detail as Transaction;
-            if (tx.type === 'Earnings' && tx.title.toLowerCase().includes('tip')) {
+            if (tx.type === 'Earnings' && tx.title?.toLowerCase().includes('tip')) {
                 setNewTipTransaction(tx);
                 setShowTipBottomSheet(true);
             }
@@ -408,35 +409,24 @@ const Home = () => {
         return () => window.removeEventListener('new-transaction', handleNewTx);
     }, []);
 
-    // Simulation: Reach hub after 5 seconds of active order
+    // Simulation: Reach hub/customer logic (Kept for visual testing but integrated with real order state)
     useEffect(() => {
-        if (hasActiveOrder && !isAtHub) {
-            const timer = setTimeout(() => {
-                setIsAtHub(true);
-            }, 5000); // 5 seconds
+        if (hasActiveOrder && activeOrder?.status === 'accepted') {
+            const timer = setTimeout(() => setIsAtHub(true), 2000); // 2 seconds for demo
             return () => clearTimeout(timer);
+        } else {
+            setIsAtHub(false);
         }
-    }, [hasActiveOrder, isAtHub]);
+    }, [hasActiveOrder, activeOrder?.status]);
 
-    // Use actual name if available from KYC
-    const riderName = fullName || "";
-
-    const navItems = [
-        { id: "home", label: "Home", icon: homeIcon },
-        { id: "earnings", label: "Earnings", icon: earningsIcon },
-        { id: "notifications", label: "Notifications", icon: notificationsIcon },
-    ];
-
-    // Simulation: Reach customer after 8 seconds of picked up
     useEffect(() => {
-        let timer: NodeJS.Timeout;
-        if (orderStatus === 'picked_up') {
-            timer = setTimeout(() => {
-                setIsAtCustomer(true);
-            }, 8000);
+        if (activeOrder?.status === 'picked_up') {
+            const timer = setTimeout(() => setIsAtCustomer(true), 3000); // 3 seconds for demo
+            return () => clearTimeout(timer);
+        } else {
+            setIsAtCustomer(false);
         }
-        return () => clearTimeout(timer);
-    }, [orderStatus]);
+    }, [activeOrder?.status]);
 
     // Handle Order Completion from OrderDelivered page and Camera Retakes
     useEffect(() => {
@@ -460,20 +450,29 @@ const Home = () => {
     }, [location.state]);
 
     const handleOpenInMaps = () => {
-        if (!activeOrder) return;
-        const address = orderStatus === 'picked_up' 
-            ? activeOrder.delivery_location || "Delivery Location"
-            : activeOrder.pickup_location || "Pickup Location";
-        const encodedAddress = encodeURIComponent(address);
-        window.open(`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`, '_blank');
+        if (!activeOrder?.delivery_location?.coordinates) {
+            // Fallback to text address if coordinates missing
+            const address = activeOrder?.delivery_address || activeOrder?.delivery_location || "Delivery Location";
+            const encodedAddress = encodeURIComponent(address as string);
+            window.open(`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`, '_blank');
+            return;
+        }
+
+        const [lng, lat] = activeOrder.delivery_location.coordinates;
+        const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+        const appleMapsUrl = `maps://maps.apple.com/?daddr=${lat},${lng}`;
+
+        // Attempt to open Google Maps, fallback handled by browser/OS
+        window.open(googleMapsUrl, '_blank');
     };
 
     const handleAcceptOrder = async (orderId: string) => {
-        if (!riderUuid) return;
+        if (!riderUuid || !fullName) return;
         
         try {
-            const { error } = await supabase.rpc('accept_order', { 
-                order_uuid: orderId 
+            // Using Edge Function instead of RPC for better logging and security
+            const { data, error } = await supabase.functions.invoke('accept-order', {
+                body: { riderId: fullName, orderId: orderId }
             });
 
             if (error) {
@@ -481,29 +480,38 @@ const Home = () => {
                 return;
             }
 
-            console.log('Order accepted successfully!');
+            console.log('Order accepted successfully:', data);
             setHasActiveOrder(true);
             setShowOrderModal(false);
+            
+            // Refetch to sync state
+            handleManualRefresh();
         } catch (err) {
             console.error('Accept order error:', err);
         }
     };
 
     const handlePickupOrder = async (selfieUrl?: string) => {
-        if (!activeOrder) return;
+        if (!activeOrder || !fullName) return;
 
         try {
-            const { error } = await supabase.rpc('mark_picked_up', { 
-                order_uuid: activeOrder.id,
-                pickup_selfie_url: selfieUrl,
-                pickup_verified_at: new Date().toISOString()
+            // selfieUrl is passed from PickUpVerificationModal (base64)
+            const { data, error } = await supabase.functions.invoke('pickup-order', {
+                body: { 
+                    riderId: fullName, 
+                    orderId: activeOrder.id,
+                    selfieBase64: selfieUrl
+                }
             });
 
             if (error) throw error;
 
-            console.log('Order marked as picked up with security verification!');
+            console.log('Order marked as picked up:', data);
             setShowPickUpModal(false);
             setOrderStatus('picked_up');
+            
+            // Sync with local state
+            setActiveOrder((prev: any) => ({ ...prev, status: 'picked_up', pickup_selfie_url: data.selfieUrl }));
         } catch (err) {
             console.error('Pickup error:', err);
         }
@@ -558,28 +566,52 @@ const Home = () => {
     }, [isOnline, hasActiveOrder, isRefreshing]);
 
     const handleVerifyOTP = async (otpValue: string) => {
-        if (!activeOrder) return;
+        if (!activeOrder || !riderUuid) return;
 
         try {
-            const { data, error } = await supabase.rpc('confirm_delivery', { 
-                order_uuid: activeOrder.id,
-                input_otp: otpValue,
-                delivery_selfie_url: activeOrder.delivery_selfie_url // Should be saved in state earlier
+            // Call the atomic complete_order RPC
+            const { data, error } = await supabase.rpc('complete_order', { 
+                p_order_id: activeOrder.id,
+                p_rider_uuid: riderUuid,
+                p_otp: otpValue,
+                p_delivery_selfie_url: activeOrder.delivery_selfie_url || ""
             });
 
-            if (error) {
-                console.error('OTP Verification failed:', error);
-                // Optional: show error message in modal
+            if (error || !data.success) {
+                console.error('Delivery completion failed:', error || data?.error);
+                // The modal handles showing the error if we return false or trigger an alert
+                alert(data?.error || "Invalid OTP. Please try again.");
                 return;
             }
 
-            console.log('OTP Verified and Order Delivered!');
+            console.log('Order Successfully Delivered!', data);
             setShowOTPModal(false);
-            navigate("/order-delivered");
+            
+            // Navigate to success screen with real earnings data
+            navigate("/order-delivered", { 
+                state: { 
+                    earnings: data.earnings,
+                    tip: data.tip,
+                    totalEarned: data.totalEarned
+                }
+            });
+            
+            // Refresh parent state
+            setHasActiveOrder(false);
+            setActiveOrder(null);
+            refreshProfile();
         } catch (err) {
             console.error('OTP Verification error:', err);
         }
     };
+
+    const riderName = fullName || "";
+
+    const navItems = [
+        { id: "home", label: "Home", icon: homeIcon },
+        { id: "earnings", label: "Earnings", icon: earningsIcon },
+        { id: "notifications", label: "Notifications", icon: notificationsIcon },
+    ];
 
     const handleToggleOnline = async () => {
         if (kycStatus !== "verified" || !riderUuid) return;
@@ -717,12 +749,17 @@ const Home = () => {
                                 <div className="flex justify-between items-center">
                                     <span className="text-black/60 text-[14px] font-medium font-satoshi">Contact Number:</span>
                                     {customerInfo?.phone ? (
-                                        <a 
-                                            href={`tel:+91${customerInfo.phone}`}
-                                            className="text-[#5260FE] text-[14px] font-bold font-satoshi underline"
-                                        >
-                                            {customerInfo.phone}
-                                        </a>
+                                        <div className="flex gap-2 items-center">
+                                            <span className="text-black text-[14px] font-bold font-satoshi">
+                                                XXXXXX{customerInfo.phone.slice(-4)}
+                                            </span>
+                                            <a 
+                                                href={`tel:${customerInfo.phone}`}
+                                                className="text-[#5260FE] text-[12px] font-bold font-satoshi underline"
+                                            >
+                                                Call Now
+                                            </a>
+                                        </div>
                                     ) : (
                                         <span className="text-black text-[14px] font-bold font-satoshi">Not available</span>
                                     )}
@@ -1023,9 +1060,7 @@ const Home = () => {
                                     }
                                 }}
                                 className="relative flex flex-col items-center justify-center h-full cursor-pointer z-10 transition-colors duration-300"
-                                style={{ 
-                                    width: "93px" // 279 / 3 = 93px slots for distribution
-                                }}
+                                style={{ width: "93px" }}
                             >
                                 <img 
                                     src={item.icon} 
@@ -1034,7 +1069,6 @@ const Home = () => {
                                     style={{ 
                                         filter: isActive ? "brightness(0)" : "none",
                                         opacity: isActive ? 1 : 1,
-                                        color: isActive ? "#000000" : "#676767"
                                     }}
                                 />
                                 <span 
