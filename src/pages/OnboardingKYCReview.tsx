@@ -15,7 +15,7 @@ const OnboardingKYCReview = () => {
     const [agreed, setAgreed] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const { images, documentNumber, fullName, dob, documentType, selfie } = location.state || {};
+    const { images, documentNumber, fullName, dob, gender, documentType, selfie } = location.state || {};
     console.log('OnboardingKYCReview initial state:', { fullName, documentNumber, riderUuid });
 
     const documentLabels: Record<string, string> = {
@@ -32,6 +32,16 @@ const OnboardingKYCReview = () => {
         return cleanNum;
     };
     const getLastFour = (num: string) => num ? num.replace(/\s/g, "").slice(-4) : "";
+    
+    const mapDocType = (type: string) => {
+        const mapping: Record<string, string> = {
+            aadhar: "aadhaar",
+            voter: "voter_id",
+            dl: "dl",
+            pan: "pan"
+        };
+        return mapping[type] || type;
+    };
 
     const handleConfirm = async () => {
         if (!riderUuid) return;
@@ -61,17 +71,19 @@ const OnboardingKYCReview = () => {
             console.log("Uploading KYC documents...");
             const uploadPromises = [];
             
+            const docsBucket = 'rider-kyc-docs';
+            
             if (images?.front) {
                 const frontPath = `kyc_${riderUuid}_front_${Date.now()}.jpg`;
-                uploadPromises.push(storageService.uploadBase64Image(images.front, 'rider-selfies', frontPath));
+                uploadPromises.push(storageService.uploadBase64Image(images.front, docsBucket, frontPath));
             }
             if (images?.back) {
                 const backPath = `kyc_${riderUuid}_back_${Date.now()}.jpg`;
-                uploadPromises.push(storageService.uploadBase64Image(images.back, 'rider-selfies', backPath));
+                uploadPromises.push(storageService.uploadBase64Image(images.back, docsBucket, backPath));
             }
             if (selfie) {
                 const selfiePath = `kyc_${riderUuid}_selfie_${Date.now()}.jpg`;
-                uploadPromises.push(storageService.uploadBase64Image(selfie, 'rider-selfies', selfiePath));
+                uploadPromises.push(storageService.uploadBase64Image(selfie, docsBucket, selfiePath));
             }
 
             const uploadedUrls = await Promise.all(uploadPromises);
@@ -89,7 +101,12 @@ const OnboardingKYCReview = () => {
                     zone_id: selected_zone_id,
                     hub_id: selected_hub_id,
                     kyc_status: 'in_review',
+                    kyc_type: mapDocType(documentType),
+                    kyc_dob: dob ? format(new Date(dob), "yyyy-MM-dd") : null,
+                    kyc_gender: gender,
+                    kyc_number: documentNumber,
                     kyc_docs_url: uploadedUrls,
+                    kyc_id_url: uploadedUrls[0], // Use front image for kyc_id_url
                     updated_at: new Date().toISOString()
                 }, { onConflict: 'id' });
 
@@ -195,6 +212,10 @@ const OnboardingKYCReview = () => {
                         <div className="flex flex-col gap-1">
                             <span className="font-medium text-[12px] text-[#616161]">Date of Birth</span>
                             <span className="font-medium text-[14px] text-black">{dob ? format(new Date(dob), "dd MMM yyyy") : "N/A"}</span>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <span className="font-medium text-[12px] text-[#616161]">Gender</span>
+                            <span className="font-medium text-[14px] text-black">{gender || "N/A"}</span>
                         </div>
                         <div className="flex justify-between items-start">
                             <div className="flex flex-col gap-1">

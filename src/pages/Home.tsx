@@ -14,6 +14,7 @@ import FaceVerification from "../components/FaceVerification";
 import DeliveryOTPModal from "../components/DeliveryOTPModal";
 import NotificationBottomSheet from "../components/NotificationBottomSheet";
 import { useAuth } from "../hooks/useAuth";
+import OrderCancelledModal from "../components/OrderCancelledModal";
 import TransactionDetailBottomSheet, { Transaction } from "../components/TransactionDetailBottomSheet";
 import SafetyToolkitBottomSheet from "../components/SafetyToolkitBottomSheet";
 import EmergencyAssistanceBottomSheet from "../components/EmergencyAssistanceBottomSheet";
@@ -29,7 +30,7 @@ const Home = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const [activeTab, setActiveTab] = useState("home");
-    const { kycStatus, fullName, riderUuid, totalEarnings, isOnline, setIsOnline, refreshProfile, selectedZoneId, selectedHubName, selectedZoneName } = useAuth();
+    const { kycStatus, fullName, riderUuid, riderId, totalEarnings, isOnline, setIsOnline, refreshProfile, selectedZoneId, selectedHubName, selectedZoneName } = useAuth();
     const [hasBeenOnline, setHasBeenOnline] = useState(
         localStorage.getItem("rider_has_been_online") === "true"
     );
@@ -42,119 +43,13 @@ const Home = () => {
     const [activeOrder, setActiveOrder] = useState<any>(null);
     const [customerInfo, setCustomerInfo] = useState<{name: string, phone: string} | null>(null);
     const [hasActiveOrder, setHasActiveOrder] = useState(false);
+    const [showCancelledModal, setShowCancelledModal] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);
     const [securityAlert, setSecurityAlert] = useState<{show: boolean, message: string}>({show: false, message: ""});
-    
-    // Subscribe to Orders Realtime
-    useEffect(() => {
-        if (!riderUuid) {
-            console.log('Order subscription blocked: Missing riderUuid');
-            return;
-        }
-        if (!isOnline) {
-            console.log('Order subscription blocked: Rider is Offline');
-            return;
-        }
-
-        const filter = selectedZoneId ? `zone_id=eq.${selectedZoneId}` : '';
-        console.log(`Subscribing to real-time orders for rider ${riderUuid} in zone ${selectedZoneId} (Filter: ${filter})...`);
-
-        const channel = supabase
-            .channel('orders-realtime')
-            .on(
-                'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'orders',
-                    filter: filter
-                },
-                (payload) => {
-                    console.log('Real-time order event received:', payload);
-                    
-                    if (payload.eventType === 'INSERT' && payload.new.status === 'pending') {
-                        console.log('MATCH: New pending order detected!');
-                        enrichOrderData(payload.new).then(enriched => {
-                            if (enriched) {
-                                setPendingOrder(enriched);
-                                setShowOrderModal(true);
-                            }
-                        });
-                    }
-                }
-            )
-            .on(
-                'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'orders',
-                    filter: `rider_id=eq.${riderUuid}`
-                },
-                (payload) => {
-                    console.log('MATCH: Active order updated for this rider!');
-                    enrichOrderData(payload.new).then(enriched => {
-                        if (enriched) {
-                            setActiveOrder(enriched);
-                            setHasActiveOrder(true);
-                            
-                            // Sync local UI status
-                            if (enriched.status === 'picked_up') {
-                                setOrderStatus('picked_up');
-                            } else if (enriched.status === 'delivered') {
-                                setHasActiveOrder(false);
-                                setActiveOrder(null);
-                                refreshProfile();
-                                navigate("/order-delivered");
-                            }
-                        }
-                    });
-                }
-            )
-            .subscribe((status) => {
-                console.log('Supabase subscription status:', status);
-            });
-
-        return () => {
-            console.log('Cleaning up order subscription...');
-            supabase.removeChannel(channel);
-        };
-    }, [riderUuid, isOnline, selectedZoneId]);
-
-    // Fetch Customer Info when Active Order changes
-    useEffect(() => {
-        const fetchCustomerInfo = async () => {
-            if (!activeOrder?.id) {
-                setCustomerInfo(null);
-                return;
-            }
-
-            try {
-                const { data, error } = await supabase
-                    .from('active_order_customer_info')
-                    .select('customer_name, customer_phone')
-                    .eq('order_id', activeOrder.id)
-                    .maybeSingle();
-
-                if (error) {
-                    console.error('Failed to fetch customer info:', error);
-                    return;
-                }
-
-                if (data) {
-                    setCustomerInfo({
-                        name: data.customer_name,
-                        phone: data.customer_phone
-                    });
-                }
-            } catch (err) {
-                console.error('Customer info fetch error:', err);
-            }
-        };
-
-        fetchCustomerInfo();
-    }, [activeOrder?.id]);
+    const [verifiedUuid, setVerifiedUuid] = useState<string | null>(null);
+    const [verifiedHubId, setVerifiedHubId] = useState<string | null>(null);
+    const [verifiedZoneId, setVerifiedZoneId] = useState<string | null>(null);
 
     const [showPickUpModal, setShowPickUpModal] = useState(false);
     const [showOTPModal, setShowOTPModal] = useState(false);
@@ -164,75 +59,284 @@ const Home = () => {
     const [orderStatus, setOrderStatus] = useState<'pickup_pending' | 'picked_up'>('pickup_pending');
     const [verificationType, setVerificationType] = useState<'pickup' | 'delivery'>('pickup');
     
+    // UI Feedback and Bottom Sheets
+    const [showNotificationSheet, setShowNotificationSheet] = useState(false);
+    const [showSafetyToolkit, setShowSafetyToolkit] = useState(false);
+    const [showEmergencyAssistance, setShowEmergencyAssistance] = useState(false);
+    const [showShareTrip, setShowShareTrip] = useState(false);
+    const [showHotline, setShowHotline] = useState(false);
+    const [locationName, setLocationName] = useState("Detecting location...");
+    const [showTipBottomSheet, setShowTipBottomSheet] = useState(false);
+    const [newTipTransaction, setNewTipTransaction] = useState<Transaction | null>(null);
+    const [isFallbackOpen, setIsFallbackOpen] = useState(false);
+    const [fallbackStatus, setFallbackStatus] = useState<'none' | 'mismatch' | 'waiting' | 'in_progress' | 'failure' | 'request_approval' | 'approved' | 'complete'>('none');
+    const [retryCount, setRetryCount] = useState(0);
+
+    const [isAtHub, setIsAtHub] = useState(false);
+    const [isAtCustomer, setIsAtCustomer] = useState(false);
+
+    // Tracking references
+    const lastLocationRef = useRef<{lat: number, lng: number} | null>(null);
+    const lastUpdateTimeRef = useRef<number>(0);
+    const watchIdRef = useRef<number | null>(null);
+
+    // Fetch Verified UUID for subscription and queries
+    useEffect(() => {
+        const verify = async () => {
+            if (!riderId) return;
+            try {
+                const { data } = await supabase
+                    .from('riders')
+                    .select('id, hub_id, zone_id')
+                    .eq('rider_id', riderId)
+                    .single();
+                
+                if (data?.id) {
+                    setVerifiedUuid(data.id);
+                    setVerifiedHubId(data.hub_id);
+                    setVerifiedZoneId(data.zone_id); // though verifiedHubId is primary for filtering
+                    console.log('Verified Rider Data:', { 
+                        uuid: data.id, 
+                        hub_id: data.hub_id, 
+                        zone_id: data.zone_id 
+                    });
+                }
+            } catch (err) {
+                console.error('Error verifying rider UUID:', err);
+            }
+        };
+        verify();
+    }, [riderId]);
+
+    // Handle Order Cancelled by Customer
+    const handleOrderCancelled = () => {
+        console.log('ALERT: Order has been cancelled by the customer!');
+        
+        // 1. Close all active modal flows
+        setShowPickUpModal(false);
+        setShowOTPModal(false);
+        setShowFaceVerification(false);
+        setIsFallbackOpen(false);
+        
+        // 2. Show cancellation modal
+        setShowCancelledModal(true);
+        
+        // 3. Auto-dismiss after 4 seconds and reset home
+        setTimeout(() => {
+            setShowCancelledModal(false);
+            setActiveOrder(null);
+            setHasActiveOrder(false);
+            setOrderStatus('pickup_pending');
+            refreshProfile(); // Sync earnings/status
+            console.log('Modal dismissed, returning home.');
+        }, 4000);
+    };
+
+    // Real-time Order Management (New Orders & Active Order Status Tracking)
+    useEffect(() => {
+        if (!verifiedUuid || !verifiedHubId) {
+            console.log('Real-time: Missing verified IDs, waiting...');
+            return;
+        }
+        if (!isOnline) {
+            console.log('Real-time: Rider is Offline, skipping subscription');
+            return;
+        }
+
+        console.log(`[Real-time] Initializing subscription for hub: ${verifiedHubId} and rider: ${verifiedUuid}`);
+        
+        // Use a consistent channel name for the home component
+        const channel = supabase.channel('rider-active-orders');
+
+        // 1. Listen for NEW pending orders in the rider's hub
+        channel.on(
+            'postgres_changes',
+            {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'orders',
+                filter: `hub_id=eq.${verifiedHubId}`
+            },
+            (payload) => {
+                console.log('[Real-time] New order insertion detected:', payload.new.id);
+                if (payload.new.status === 'pending') {
+                    enrichOrderData(payload.new).then(enriched => {
+                        if (enriched) {
+                            setPendingOrder(enriched);
+                            setShowOrderModal(true);
+                        }
+                    });
+                }
+            }
+        );
+
+        // 2. Listen for UPDATES to orders assigned to this rider
+        // This catches status changes like 'accepted' -> 'picked_up' -> 'delivered'
+        channel.on(
+            'postgres_changes',
+            {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'orders',
+                filter: `rider_id=eq.${verifiedUuid}`
+            },
+            async (payload) => {
+                const newStatus = payload.new.status;
+                console.log(`[Real-time] Active order status update detected: ${newStatus}`);
+                
+                // CRITICAL: Immediate check for cancellation
+                if (newStatus === 'cancelled') {
+                    console.log('[Real-time] ALERT: ACTIVE ORDER CANCELLED BY CUSTOMER');
+                    handleOrderCancelled();
+                    return;
+                }
+
+                // Re-fetch with joins because Realtime payload is just a raw row
+                const { data: refreshed } = await supabase
+                    .from('orders')
+                    .select(`
+                        *,
+                        zone:zone_id (name, description),
+                        destination:address_id (full_address, latitude, longitude),
+                        customer:user_id (full_name, phone_number)
+                    `)
+                    .eq('id', payload.new.id)
+                    .maybeSingle();
+                
+                if (refreshed) {
+                    const enriched = await enrichOrderData(refreshed);
+                    if (enriched) {
+                        setActiveOrder(enriched);
+                        setHasActiveOrder(true);
+                        
+                        // Handle transition states
+                        if (newStatus === 'picked_up') {
+                            setOrderStatus('picked_up');
+                        } else if (newStatus === 'delivered') {
+                            setHasActiveOrder(false);
+                            setActiveOrder(null);
+                            refreshProfile();
+                            navigate("/order-delivered");
+                        }
+                    }
+                }
+            }
+        );
+
+        // 3. Fallback/Direct Status Tracking for Active Order
+        // Using joins for hubs and profiles to get immediate data
+        if (activeOrder?.id) {
+            const orderId = activeOrder.id;
+            console.log(`[Real-time] Adding dedicated ID listener for: ${orderId}`);
+            channel.on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'orders',
+                    filter: `id=eq.${orderId}`
+                },
+                async (payload) => {
+                    console.log(`[Real-time] ID-specific update for ${orderId}: ${payload.new.status}`);
+                    if (payload.new.status === 'cancelled') {
+                        handleOrderCancelled();
+                        return;
+                    }
+
+                    // Re-fetch with joins to ensure we have all details
+                    const { data: refreshed } = await supabase
+                        .from('orders')
+                        .select(`
+                            *,
+                            zone:zone_id (name, description),
+                            destination:address_id (full_address, latitude, longitude),
+                            customer:user_id (full_name, phone_number)
+                        `)
+                        .eq('id', orderId)
+                        .maybeSingle();
+                    
+                    if (refreshed) {
+                        const enriched = await enrichOrderData(refreshed);
+                        if (enriched) {
+                            setActiveOrder(enriched);
+                            setHasActiveOrder(true);
+                            setOrderStatus(enriched.status === 'picked_up' ? 'picked_up' : 'pickup_pending');
+                        }
+                    }
+                }
+            );
+        }
+
+        channel.subscribe((status) => {
+            console.log(`[Real-time] Subscription status for ${activeOrder?.id || 'hub'}:`, status);
+        });
+
+        return () => {
+            console.log('[Real-time] Cleaning up home subscriptions...');
+            supabase.removeChannel(channel);
+        };
+    }, [verifiedUuid, verifiedHubId, isOnline, activeOrder?.id]);
+
+    // Debug trigger for testing the cancellation modal
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('test_cancel') === 'true') {
+            const isPersistent = params.get('persist') === 'true';
+            console.log(`DEBUG: Triggering cancellation modal (Persistent: ${isPersistent})...`);
+            setShowCancelledModal(true);
+            
+            if (!isPersistent) {
+                setTimeout(() => {
+                    const newUrl = window.location.pathname;
+                    window.history.replaceState({}, '', newUrl);
+                    setShowCancelledModal(false);
+                }, 4000);
+            }
+        }
+    }, []);
+
+    // Finalizing order data enrichment logic...
+    
     // Helper to enrich order data (Hub Details + Delivery Details + Financials)
     const enrichOrderData = async (order: any) => {
         if (!order) return null;
         
         let enriched = { ...order };
         
-        // 1. Pickup Details (from pickup_location id)
-        if (order.pickup_location) {
-            try {
-                const { data: hubData } = await supabase
-                    .from('hubs')
-                    .select('location_name, address')
-                    .eq('id', order.pickup_location)
-                    .maybeSingle();
-                
-                if (hubData) {
-                    enriched.pickup_name = hubData.location_name;
-                    enriched.pickup_address = hubData.address;
-                }
-            } catch (err) {
-                console.error('Hub fetch error:', err);
-            }
+        // 0. Financials & Distance (Priority mapping)
+        // Map rider_commission or amount if rider_earnings is 0 as per user request
+        const baseEarnings = Number(order.rider_commission || order.amount || 0);
+        enriched.rider_earnings = baseEarnings > 0 ? baseEarnings : Number(order.rider_earnings || 0);
+        enriched.delivery_tip = Number(order.delivery_tip || 0);
+        enriched.total_potential = enriched.rider_earnings + enriched.delivery_tip;
+        enriched.distance = Number(order.distance_km || order.distance || 2.1);
+        
+        // 1. Pickup Details (Prioritize joined 'zone' info from service_zones)
+        if (order.zone) {
+            enriched.pickup_name = order.zone.name;
+            enriched.pickup_address = order.zone.description;
+        } else if (order.pickup_location) {
+            // Fallback for missing joins or string-based pickup labels
+            enriched.pickup_name = order.pickup_location;
         }
 
-        // 2. Delivery Details (from delivery_address_text or address_id)
-        if (!enriched.delivery_address && order.address_id) {
-            try {
-                const { data: addressData } = await supabase
-                    .from('user_addresses')
-                    .select('full_address')
-                    .eq('id', order.address_id)
-                    .maybeSingle();
-                
-                if (addressData) {
-                    enriched.delivery_address = addressData.full_address;
-                }
-            } catch (err) {
-                console.error('Delivery address fetch error:', err);
-            }
+        // 2. Customer Info (Joined data from profiles/users)
+        if (order.customer) {
+            setCustomerInfo({
+                name: order.customer.full_name || "Customer",
+                phone: order.customer.phone_number || ""
+            });
+        }
+
+        // 3. Delivery Details (Joined from 'destination' / addresses table)
+        if (order.destination?.full_address) {
+            enriched.delivery_address = order.destination.full_address;
         } else if (order.delivery_address_text) {
             enriched.delivery_address = order.delivery_address_text;
         }
-
-        // 3. Distance & Earnings Sync
-        const distance = Number(order.distance_km || order.distance || 2.1);
-        enriched.distance = distance;
-        
-        // Ensure earnings are valid numbers
-        enriched.rider_earnings = Number(order.rider_earnings || 0);
-        enriched.delivery_tip = Number(order.delivery_tip || 0);
-        enriched.total_potential = enriched.rider_earnings + enriched.delivery_tip;
         
         return enriched;
     };
-    const [isAtHub, setIsAtHub] = useState(false);
-    const [isAtCustomer, setIsAtCustomer] = useState(false);
-    const [showNotificationSheet, setShowNotificationSheet] = useState(false);
-    const [showTipBottomSheet, setShowTipBottomSheet] = useState(false);
-    const [newTipTransaction, setNewTipTransaction] = useState<Transaction | null>(null);
-    const [showSafetyToolkit, setShowSafetyToolkit] = useState(false);
-    const [showEmergencyAssistance, setShowEmergencyAssistance] = useState(false);
-    const [showShareTrip, setShowShareTrip] = useState(false);
-    const [showHotline, setShowHotline] = useState(false);
-    const [locationName, setLocationName] = useState("Detecting location...");
-    
-    // Tracking references
-    const lastLocationRef = useRef<{lat: number, lng: number} | null>(null);
-    const lastUpdateTimeRef = useRef<number>(0);
-    const watchIdRef = useRef<number | null>(null);
 
     // Helper: Haversine distance in meters
     const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -268,23 +372,48 @@ const Home = () => {
     // Initial Fetch for Active Order
     useEffect(() => {
         const fetchInitialActiveOrder = async () => {
-            if (!riderUuid) return;
+            // First fetch the formal rider UUID using the string-based rider_id
+            if (!riderId) return;
             
             try {
-                const { data, error } = await supabase
-                    .from('orders')
-                    .select('*')
-                    .eq('rider_id', riderUuid)
-                    .in('status', ['accepted', 'picked_up'])
-                    .maybeSingle();
-                
-                if (data) {
-                    console.log('Found existing active order on load:', data);
-                    const enriched = await enrichOrderData(data);
-                    if (enriched) {
-                        setActiveOrder(enriched);
-                        setHasActiveOrder(true);
-                        setOrderStatus(enriched.status === 'picked_up' ? 'picked_up' : 'pickup_pending');
+                const { data: riderData } = await supabase
+                    .from('riders')
+                    .select('id')
+                    .eq('rider_id', riderId)
+                    .single();
+
+                if (riderData?.id) {
+                    const { data, error } = await supabase
+                        .from('orders')
+                        .select(`
+                            *,
+                            zone:zone_id (name, description),
+                            destination:address_id (full_address, latitude, longitude),
+                            customer:user_id (full_name, phone_number)
+                        `)
+                        .eq('rider_id', riderData.id)
+                        .in('status', ['accepted', 'assigned', 'picked_up', 'on_the_way'])
+                        .maybeSingle();
+                    
+                    if (data) {
+                        console.log('Found existing active order on load:', data);
+                        const enriched = await enrichOrderData(data);
+                        if (enriched) {
+                            setActiveOrder(enriched);
+                            setHasActiveOrder(true);
+                            setOrderStatus(enriched.status === 'picked_up' || enriched.status === 'on_the_way' ? 'picked_up' : 'pickup_pending');
+                        }
+                    } else {
+                        // Diagnostic: Log the last order status for this rider if nothing active found
+                        const { data: lastOrder } = await supabase
+                            .from('orders')
+                            .select('id, status, created_at')
+                            .eq('rider_id', riderData.id)
+                            .order('created_at', { ascending: false })
+                            .limit(1)
+                            .maybeSingle();
+                        
+                        console.log('No active order found. Last order status:', lastOrder?.status || 'None found', 'Order ID:', lastOrder?.id || 'N/A');
                     }
                 }
             } catch (err) {
@@ -293,7 +422,7 @@ const Home = () => {
         };
 
         fetchInitialActiveOrder();
-    }, [riderUuid]);
+    }, [riderId]);
 
     // Location Heartbeat & Watcher
     useEffect(() => {
@@ -347,12 +476,6 @@ const Home = () => {
             }
         };
     }, [isOnline, riderUuid]);
-
-    // Fallback Flow State
-    const [isFallbackOpen, setIsFallbackOpen] = useState(false);
-    const [fallbackStatus, setFallbackStatus] = useState<'none' | 'mismatch' | 'waiting' | 'in_progress' | 'failure' | 'request_approval' | 'approved' | 'complete'>('none');
-    const [activeOrderId] = useState("CASH-789"); // Mock order ID
-    const [retryCount, setRetryCount] = useState(0);
 
     // Timer-based Simulation for Fallback Flow (Frontend-only test)
     useEffect(() => {
@@ -472,7 +595,7 @@ const Home = () => {
         try {
             // Using Edge Function instead of RPC for better logging and security
             const { data, error } = await supabase.functions.invoke('accept-order', {
-                body: { riderId: fullName, orderId: orderId }
+                body: { riderId: riderId, orderId: orderId }
             });
 
             if (error) {
@@ -523,12 +646,14 @@ const Home = () => {
         setIsRefreshing(true);
         
         try {
-            // Fetch available orders FILTERED BY ZONE ID (Zone-Based Architecture)
+            // Fetch available orders FILTERED BY HUB ID UUID (using confirmed rider.hub_id)
             let query = supabase.from('available_orders').select('*', { count: 'exact' });
             
-            if (selectedZoneId) {
-                query = query.eq('zone_id', selectedZoneId);
+            if (verifiedHubId) {
+                query = query.eq('hub_id', verifiedHubId);
             }
+
+            query = query.is('rider_id', null).eq('status', 'pending');
 
             const { data, error } = await query;
 
@@ -802,9 +927,9 @@ const Home = () => {
                             ) : (
                                 <button 
                                     className={`w-full h-[48px] rounded-full text-white font-satoshi font-medium text-[16px] transition-all
-                                        ${isAtHub ? 'bg-[#5260FE] active:scale-95 cursor-pointer' : 'bg-[#5260FE]/50 cursor-not-allowed'}`}
+                                        ${(isAtHub && activeOrder?.pickup_name && customerInfo?.name && activeOrder?.rider_earnings) ? 'bg-[#5260FE] active:scale-95 cursor-pointer' : 'bg-[#5260FE]/50 cursor-not-allowed'}`}
                                     onClick={() => setShowPickUpModal(true)}
-                                    disabled={!isAtHub}
+                                    disabled={!(isAtHub && activeOrder?.pickup_name && customerInfo?.name && activeOrder?.rider_earnings)}
                                 >
                                     Pick Up
                                 </button>
@@ -1228,6 +1353,17 @@ const Home = () => {
                         navigate("/notifications");
                         console.log("Push notifications declined.");
                     }}
+                />
+            )}
+
+            {/* Order Cancelled Feedback Modal */}
+            {showCancelledModal && (
+                <OrderCancelledModal 
+                    onDismiss={() => {
+                        setShowCancelledModal(false);
+                        setActiveOrder(null);
+                        setHasActiveOrder(false);
+                    }} 
                 />
             )}
 

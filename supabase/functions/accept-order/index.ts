@@ -11,6 +11,8 @@ serve(async (req) => {
 
   try {
     const { riderId, orderId } = await req.json()
+    console.log('Received riderId:', riderId)
+
     if (!riderId || !orderId) throw new Error("Missing riderId or orderId")
 
     const supabase = createClient(
@@ -26,7 +28,9 @@ serve(async (req) => {
       .eq('rider_id', riderId)
       .single()
 
-    if (riderError || !rider) throw new Error("Rider not found")
+    console.log('Rider lookup result:', rider)
+
+    if (riderError || !rider) throw new Error(`Rider not found for rider_id: ${riderId}`)
 
     // 2. Accept order (atomic transition from pending)
     const { data, error } = await supabase

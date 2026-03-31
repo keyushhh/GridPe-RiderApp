@@ -17,7 +17,9 @@ const OnboardingKYCUpload = () => {
     const [documentNumber, setDocumentNumber] = useState("");
     const [fullName, setFullName] = useState("");
     const [dob, setDob] = useState<Date | undefined>(undefined);
+    const [gender, setGender] = useState<string>("");
     const [showCalendar, setShowCalendar] = useState(false);
+    const [showGenderMenu, setShowGenderMenu] = useState(false);
 
     const documentLabels: Record<string, string> = {
         aadhar: "Aadhar Card",
@@ -125,7 +127,7 @@ const OnboardingKYCUpload = () => {
         setImages({ front: null, back: null });
     };
 
-    const canSubmit = images.front && images.back && documentNumber && fullName && dob && !documentError;
+    const canSubmit = images.front && images.back && documentNumber && fullName && dob && gender && !documentError;
 
     return (
         <div className="relative h-[100dvh] w-full flex flex-col items-center bg-white font-satoshi overflow-hidden">
@@ -259,6 +261,7 @@ const OnboardingKYCUpload = () => {
                     {/* Date of Birth using custom glass calendar */}
                     <div className="relative w-full">
                         <button
+                            type="button"
                             onClick={() => setShowCalendar(!showCalendar)}
                             className={`w-[362px] h-[48px] rounded-[100px] text-left px-6 mx-auto flex items-center justify-between bg-[#F7F8FA] border transition-colors outline-none focus:border-[#5260FE] ${
                                 showCalendar ? "border-[#5260FE]" : "border-[#E6E8EB]"
@@ -281,6 +284,44 @@ const OnboardingKYCUpload = () => {
                             </div>
                         )}
                     </div>
+
+                    {/* Gender Dropdown */}
+                    <div className="relative w-full">
+                        <button
+                            type="button"
+                            onClick={() => setShowGenderMenu(!showGenderMenu)}
+                            className={`w-[362px] h-[48px] rounded-[100px] text-left px-6 mx-auto flex items-center justify-between bg-[#F7F8FA] border transition-colors outline-none focus:border-[#5260FE] ${
+                                showGenderMenu ? "border-[#5260FE]" : "border-[#E6E8EB]"
+                            }`}
+                        >
+                            <span className={`${gender ? "text-black" : "text-[#A0A0A0]"} font-medium`}>
+                                {gender || "Select Gender"}
+                            </span>
+                            <div className={`transition-transform duration-200 ${showGenderMenu ? "rotate-180" : ""}`}>
+                                <svg width="12" height="8" viewBox="0 0 12 8" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M1 1.5L6 6.5L11 1.5" stroke="#A0A0A0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                            </div>
+                        </button>
+                        
+                        {showGenderMenu && (
+                            <div className="absolute top-[54px] left-0 right-0 w-[362px] mx-auto bg-white border border-[#E6E8EB] rounded-[16px] shadow-lg z-50 overflow-hidden py-1">
+                                {["Male", "Female", "Other"].map((option) => (
+                                    <button
+                                        key={option}
+                                        type="button"
+                                        onClick={() => {
+                                            setGender(option);
+                                            setShowGenderMenu(false);
+                                        }}
+                                        className="w-full h-[44px] px-6 text-left hover:bg-[#F7F8FA] transition-colors text-black font-medium text-[14px]"
+                                    >
+                                        {option}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {/* Continue CTA */}
@@ -298,6 +339,7 @@ const OnboardingKYCUpload = () => {
                                     documentNumber, 
                                     fullName, 
                                     dob, 
+                                    gender,
                                     documentType 
                                 } 
                             });
