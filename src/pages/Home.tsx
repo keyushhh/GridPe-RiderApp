@@ -25,12 +25,18 @@ import DeliveryFallbackPopups from "../components/DeliveryFallbackPopups";
 import { supabase } from "../lib/supabase";
 import { storageService } from "../services/storageService";
 import SecurityAlert from "../components/SecurityAlert";
+import GlowingOrb from "../components/GlowingOrb";
+import { Order } from "../types/database";
 
 const Home = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const [activeTab, setActiveTab] = useState("home");
-    const { kycStatus, fullName, riderUuid, riderId, totalEarnings, isOnline, setIsOnline, refreshProfile, selectedZoneId, selectedHubName, selectedZoneName } = useAuth();
+    const { 
+        kycStatus, fullName, riderUuid, riderId, totalEarnings, 
+        isOnline, setIsOnline, refreshProfile, selectedZoneId, 
+        selectedHubName, selectedZoneName, workCity, selectedCity 
+    } = useAuth();
     const [hasBeenOnline, setHasBeenOnline] = useState(
         localStorage.getItem("rider_has_been_online") === "true"
     );
@@ -39,8 +45,8 @@ const Home = () => {
     const earnings = totalEarnings || Number(localStorage.getItem("rider_earnings")) || 0;
 
     const [showOrderModal, setShowOrderModal] = useState(false);
-    const [pendingOrder, setPendingOrder] = useState<any>(null);
-    const [activeOrder, setActiveOrder] = useState<any>(null);
+    const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
+    const [activeOrder, setActiveOrder] = useState<Order | null>(null);
     const [customerName, setCustomerName] = useState<string>("");
     const [customerPhone, setCustomerPhone] = useState<string>("");
     const [hasActiveOrder, setHasActiveOrder] = useState(false);
@@ -50,10 +56,10 @@ const Home = () => {
     const [activeShiftId, setActiveShiftId] = useState<string | null>(null);
     const [isToggling, setIsToggling] = useState(false);
     const [securityAlert, setSecurityAlert] = useState<{show: boolean, message: string}>({show: false, message: ""});
-    const [verifiedUuid, setVerifiedUuid] = useState<string | null>(null);
+    const [verifiedUuid, setVerifiedUuid] = useState<string | null>(riderUuid);
     const [verifiedHubId, setVerifiedHubId] = useState<string | null>(null);
-    const [verifiedZoneId, setVerifiedZoneId] = useState<string | null>(null);
-    const [riderCity, setRiderCity] = useState<string | null>(null);
+    const [verifiedZoneId, setVerifiedZoneId] = useState<string | null>(selectedZoneId);
+    const [riderCity, setRiderCity] = useState<string | null>(workCity || selectedCity);
     const [deliveryAddress, setDeliveryAddress] = useState<string>("Fetching address...");
     const [mapsUrl, setMapsUrl] = useState<string>("");
 
@@ -86,41 +92,7 @@ const Home = () => {
     const lastUpdateTimeRef = useRef<number>(0);
     const watchIdRef = useRef<number | null>(null);
 
-    // Fetch Verified UUID, Hub, and City for subscription and queries
-    useEffect(() => {
-        const verify = async () => {
-            if (!riderId) return;
-            try {
-                const { data } = await supabase
-                    .from('riders')
-                    .select('id, hub_id, zone_id, work_city, selected_city, selected_hub')
-                    .eq('rider_id', riderId)
-                    .single();
-                
-                if (data?.id) {
-                    setVerifiedUuid(data.id);
-                    setVerifiedHubId(data.hub_id);
-                    setVerifiedZoneId(data.zone_id);
-                    
-                    // City priority: work_city first, then selected_city
-                    const city = data.work_city || data.selected_city || null;
-                    setRiderCity(city);
-                    
-                    console.log('Verified Rider Data:', { 
-                        uuid: data.id, 
-                        hub_id: data.hub_id, 
-                        zone_id: data.zone_id,
-                        city: city,
-                        work_city: data.work_city,
-                        selected_city: data.selected_city
-                    });
-                }
-            } catch (err) {
-                console.error('Error verifying rider details:', err);
-            }
-        };
-        verify();
-    }, [riderId]);
+    // Removed redundant rider profile verification useEffect as it's handled by useAuth
 
     // Shift Sync: Check for active shifts on app start
     useEffect(() => {
@@ -544,7 +516,6 @@ const Home = () => {
     // Location Heartbeat & Watcher
     useEffect(() => {
         if (isOnline && riderUuid) {
-            console.log('Starting location watcher (isOnline=true)...');
             
             if ("geolocation" in navigator) {
                 watchIdRef.current = navigator.geolocation.watchPosition(
@@ -766,7 +737,7 @@ const Home = () => {
             setOrderStatus('picked_up');
             
             // Sync with local state
-            setActiveOrder((prev: any) => ({ ...prev, status: 'picked_up', pickup_selfie_url: data.selfieUrl }));
+            setActiveOrder((prev) => prev ? ({ ...prev, status: 'picked_up' as any, pickup_selfie_url: data.selfieUrl }) : null);
         } catch (err) {
             console.error('Pickup error:', err);
         }
@@ -978,15 +949,7 @@ const Home = () => {
 
     return (
         <div className="relative h-[100dvh] w-full bg-white font-satoshi overflow-hidden flex flex-col items-center">
-            {/* Standardized Glowing Orb: Dynamic Color */}
-            <div
-                className="absolute top-[-20px] left-1/2 -translate-x-1/2 w-[166px] h-[40px] rounded-full pointer-events-none z-0 transition-colors duration-500"
-                style={{
-                    backgroundColor: kycStatus === "verified" ? "#5260FE" : "#FACC15",
-                    filter: "blur(60px)",
-                    opacity: 0.8,
-                }}
-            />
+            <GlowingOrb />
 
             {/* Header Container */}
             <div className={`flex-none flex items-center justify-between w-[362px] px-0 pt-12 pb-2 relative z-10`}>
@@ -1063,7 +1026,7 @@ const Home = () => {
                                     <span className="text-black/60 text-[14px] font-medium font-satoshi">Your Earning:</span>
                                     <span className="text-black text-[14px] font-bold font-satoshi">₹{Number(activeOrder?.rider_earnings) || 0}</span>
                                 </div>
-                                {activeOrder?.delivery_tip > 0 && (
+                                {activeOrder?.delivery_tip && activeOrder.delivery_tip > 0 && (
                                     <div className="flex justify-between items-center">
                                         <span className="text-black/60 text-[14px] font-medium font-satoshi">Delivery Tip:</span>
                                         <span className="text-black text-[14px] font-bold font-satoshi">₹{activeOrder.delivery_tip}</span>
@@ -1478,11 +1441,9 @@ const Home = () => {
                                         setFallbackStatus('mismatch');
                                     }
                                     setIsFallbackOpen(true);
-                                    console.log(`Simulating delivery verification failure (Try ${retryCount + 1})`);
                                 } else {
                                     setShowPickUpModal(false);
                                     setShowOTPModal(true);
-                                    console.log("Delivery Verification: Face matched, opening OTP modal");
                                 }
                             }
                         } else {
@@ -1509,16 +1470,13 @@ const Home = () => {
                         if (!activeOrder) return;
                         
                         setIsVerifying(true);
-                        console.log("Processing face scan...");
                         
                         try {
                             // 1. Upload to Supabase Storage
                             const path = `${activeOrder.id}_${verificationType}_${Date.now()}.jpg`;
                             const selfieUrl = await storageService.uploadBase64Image(image, 'rider-selfies', path);
-                            console.log("Selfie uploaded:", selfieUrl);
 
                             // 2. Perform Safety Check (Simulated Match)
-                            // In a real app, this would be an RPC call to AWS Rekognition or similar
                             const isMatch = Math.random() > 0.05; // 95% success simulation
                             
                             if (!isMatch) {
@@ -1540,7 +1498,6 @@ const Home = () => {
                                 setIsVerified(true);
                                 setShowFaceVerification(false);
                                 setShowOTPModal(true);
-                                console.log("Face matched for delivery, opening OTP modal");
                             }
                         } catch (err) {
                             console.error("Security flow failed:", err);
@@ -1550,7 +1507,6 @@ const Home = () => {
                         }
                     }}
                     onVideoCapture={(videoUrl) => {
-                        console.log("Captured video:", videoUrl);
                         setShowFaceVerification(false);
                         setFaceVerificationMode('photo');
                         navigate('/video-verification', { state: { videoUrl } });

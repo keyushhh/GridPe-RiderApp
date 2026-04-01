@@ -19,6 +19,8 @@ interface AuthContextType {
     selectedHubName: string | null;
     totalEarnings: number;
     isOnline: boolean;
+    workCity: string | null;
+    hasPasskeys: boolean;
     setIsOnline: (online: boolean) => void;
     setPhoneNumber: (phone: string | null) => void;
     updateEmail: (email: string | null) => void;
@@ -49,6 +51,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [selectedHubName, setSelectedHubName] = useState<string | null>(localStorage.getItem('rider_selected_hub_name'));
     const [totalEarnings, setTotalEarnings] = useState<number>(Number(localStorage.getItem('rider_earnings')) || 0);
     const [isOnline, setIsOnlineState] = useState<boolean>(localStorage.getItem('rider_is_online') === 'true');
+    const [workCity, setWorkCity] = useState<string | null>(localStorage.getItem('rider_work_city'));
+    const [hasPasskeys, setHasPasskeys] = useState<boolean>(localStorage.getItem('rider_has_passkeys') === 'true');
     const [loading, setLoading] = useState(true);
 
     const setIsOnline = (online: boolean) => {
@@ -210,6 +214,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setSelectedHubName(data.hubs.location_name);
                     localStorage.setItem('rider_selected_hub_name', data.hubs.location_name);
                 }
+                if (data.work_city) {
+                    setWorkCity(data.work_city);
+                    localStorage.setItem('rider_work_city', data.work_city);
+                }
+                if (data.has_passkeys !== undefined) {
+                    setHasPasskeys(data.has_passkeys);
+                    localStorage.setItem('rider_has_passkeys', data.has_passkeys.toString());
+                }
             }
         } catch (err) {
             console.error('Failed to sync profile with Supabase:', err);
@@ -291,6 +303,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('rider_selected_zone_name');
         localStorage.removeItem('rider_selected_hub_name');
         localStorage.removeItem('rider_bank_accounts');
+        localStorage.removeItem('rider_work_city');
+        localStorage.removeItem('rider_has_passkeys');
         
         // Reset all React state
         setRiderUuid(null);
@@ -309,6 +323,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSelectedHubId(null);
         setSelectedZoneName(null);
         setSelectedHubName(null);
+        setWorkCity(null);
+        setHasPasskeys(false);
         
         console.log('User logged out, all state cleared.');
     };
@@ -332,6 +348,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             avatar, 
             totalEarnings,
             isOnline,
+            workCity,
+            hasPasskeys,
             setIsOnline,
             setPhoneNumber, 
             updateEmail, 

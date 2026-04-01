@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
+import { EarningOverview, DailyEarning, WeeklyEarning } from "../types/database";
 import earningsIcon from "../assets/earnings.svg";
 import homeIcon from "../assets/home.svg";
 import notificationsIcon from "../assets/notifications.svg";
@@ -10,6 +11,10 @@ import chevronForward from "../assets/chevron_forward.svg";
 import deliveriesIcon from "../assets/deliveries.png";
 import alarmIcon from "../assets/alarm.png";
 import targetIcon from "../assets/target.png";
+import GlowingOrb from "../components/GlowingOrb";
+import PageHeader from "../components/PageHeader";
+import LoadingSpinner from "../components/ui/LoadingSpinner";
+import Button from "../components/ui/Button";
 
 const Earnings = () => {
     const navigate = useNavigate();
@@ -18,9 +23,9 @@ const Earnings = () => {
     const [earningType, setEarningType] = useState("daily");
     const [loading, setLoading] = useState(true);
 
-    const [overview, setOverview] = useState<any>(null);
-    const [dailyEarnings, setDailyEarnings] = useState<any[]>([]);
-    const [weeklyEarnings, setWeeklyEarnings] = useState<any[]>([]);
+    const [overview, setOverview] = useState<EarningOverview | null>(null);
+    const [dailyEarnings, setDailyEarnings] = useState<DailyEarning[]>([]);
+    const [weeklyEarnings, setWeeklyEarnings] = useState<WeeklyEarning[]>([]);
 
     const getCurrentWeekRange = () => {
         const now = new Date();
@@ -63,21 +68,24 @@ const Earnings = () => {
             
             if (start && end) {
                 // If we fetched a specific week, update overview stats
-                setOverview((prev: any) => ({
-                    ...prev,
-                    totalEarnings: data.total_earnings,
-                    orderEarnings: data.order_earnings,
-                    totalTips: data.total_tips,
-                    deliveryCount: data.delivery_count,
-                    avgPerHour: data.total_hours > 0 ? (data.total_earnings / data.total_hours) : 0,
-                }));
+                setOverview((prev) => {
+                    if (!prev) return null;
+                    return {
+                        ...prev,
+                        totalEarnings: data.total_earnings,
+                        orderEarnings: data.order_earnings,
+                        totalTips: data.total_tips,
+                        deliveryCount: data.delivery_count,
+                        avgPerHour: data.total_hours > 0 ? (data.total_earnings / data.total_hours) : 0,
+                    };
+                });
             } else {
                 setOverview(data);
                 setWeekStart(data.weekStart);
                 setWeekEnd(data.weekEnd);
             }
         } catch (err) {
-            console.error("Error fetching overview:", err);
+            // Error handled silently
         }
     }, [riderId]);
 
@@ -89,7 +97,7 @@ const Earnings = () => {
                     body: { riderId, type: 'daily', weekStart, weekEnd }
                 });
                 if (error) throw error;
-                setDailyEarnings(data.map((item: any) => ({
+                setDailyEarnings(data.map((item: any): DailyEarning => ({
                     date: new Date(item.day).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }),
                     subtext: "0 hours online", // Placeholder
                     amount: item.total_earnings,
@@ -103,7 +111,7 @@ const Earnings = () => {
                     body: { riderId, type: 'weeks-list' }
                 });
                 if (error) throw error;
-                setWeeklyEarnings(data.map((item: any) => ({
+                setWeeklyEarnings(data.map((item: any): WeeklyEarning => ({
                     date: formatDateRange(item.week_start, item.week_end),
                     subtext: "0 hours online", // Placeholder
                     amount: item.total_earnings,
@@ -113,7 +121,7 @@ const Earnings = () => {
                 })));
             }
         } catch (err) {
-            console.error("Error fetching breakdown:", err);
+            // Error handled silently
         }
     }, [riderId, weekStart, weekEnd, earningType]);
 
@@ -158,26 +166,15 @@ const Earnings = () => {
         { id: "notifications", label: "Notifications", icon: notificationsIcon, path: "/notifications" },
     ];
 
+    if (loading) return <LoadingSpinner />;
+
     return (
         <div className="relative w-full h-[100dvh] bg-[#F5F5F5] font-satoshi flex flex-col items-center overflow-hidden">
             {/* Scrollable Content Area */}
             <div className="flex-1 w-full overflow-y-auto no-scrollbar flex flex-col items-center pb-[120px]">
-                {/* Purple Glowing Orb */}
-                <div
-                    className="absolute top-[-20px] left-1/2 -translate-x-1/2 w-[166px] h-[40px] rounded-full pointer-events-none z-0"
-                    style={{
-                        backgroundColor: "#5260FE",
-                        filter: "blur(60px)",
-                        opacity: 0.8,
-                    }}
-                />
+                <GlowingOrb />
 
-                {/* Header Container */}
-                <div className="flex-none flex items-center justify-center w-[362px] px-0 pt-12 pb-2 relative z-10">
-                    <h1 className="text-black text-[22px] font-medium leading-none">
-                        Earnings
-                    </h1>
-                </div>
+                <PageHeader title="Earnings" backPath="/dashboard" />
 
                 {/* Overview Container: 38px below heading */}
                 <div className="mt-[38px] w-[362px] h-[261px] rounded-[14px] bg-white border border-[#EDEDED] shadow-[0px_2px_8px_0px_rgba(0,0,0,0.04)] relative shrink-0">
@@ -382,15 +379,13 @@ const Earnings = () => {
 
                     {/* CTA Button */}
                     <div className="mt-[18px] flex justify-center">
-                        <button 
+                        <Button 
                             onClick={() => navigate("/wallet", { state: { amount: overview?.walletBalance || 0 } })}
-                            className="w-[335px] h-[44px] rounded-full flex items-center justify-center text-[16px] font-medium transition-transform active:scale-95 bg-[#5260FE] text-white"
-                            style={{ 
-                                boxShadow: '0px 4px 12px rgba(82,96,254,0.2)' 
-                            }}
+                            variant="primary"
+                            className="w-[335px] h-[44px]"
                         >
                             View Wallet
-                        </button>
+                        </Button>
                     </div>
                 </div>
 
@@ -423,7 +418,7 @@ const Earnings = () => {
                 {/* Earnings Table: Dynamic based on earningType */}
                 <div className="mt-[20px] mb-[20px] w-[362px] bg-white rounded-[14px] border border-[#EDEDED] p-[18px] shrink-0">
                     <div className="flex flex-col">
-                        {(earningType === "daily" ? dailyEarnings : weeklyEarnings).map((item: any, index: number) => (
+                        {(earningType === "daily" ? (dailyEarnings as any[]) : (weeklyEarnings as any[])).map((item, index: number) => (
                             <div key={index}>
                                 <div className="flex items-center justify-between">
                                     <div className="flex flex-col gap-[2px]">

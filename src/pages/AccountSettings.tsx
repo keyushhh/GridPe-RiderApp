@@ -6,7 +6,6 @@ import avatarImg from "../assets/avatar.png";
 import bankIcon from "../assets/bank.svg";
 import callFillIcon from "../assets/call-fill.svg";
 import chatIcon from "../assets/chat.svg";
-import chevronBackward from "../assets/chevron_backward.svg";
 import chevronForward from "../assets/chevron_forward.svg";
 import copyIcon from "../assets/copy.svg";
 import deleteIcon from "../assets/delete.svg";
@@ -38,9 +37,15 @@ import qrCodeImg from "../assets/trial-qr.png";
 import QRCode from 'qrcode';
 import verifiedBadge from "../assets/verified-badge.svg";
 import walletIcon from "../assets/wallet.svg";
+import GlowingOrb from "../components/GlowingOrb";
+import PageHeader from "../components/PageHeader";
+import LoadingSpinner from "../components/ui/LoadingSpinner";
+import Button from "../components/ui/Button";
 import AccountSelectionList from "../components/AccountSelectionList";
 import ManualBankForm from "../components/ManualBankForm";
 import SupportStatusBottomSheet, { SupportStatusStep } from "../components/SupportStatusBottomSheet";
+import { BankAccount, SupportTicket } from "../types/database";
+import { FAQItem } from "../data/helpData";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../context/ToastContext";
 import { getBankLogo } from "../utils/BankLogoMap";
@@ -74,7 +79,13 @@ const loadRazorpayScript = () => {
 };
 
 // Helper component for swipe-to-delete
-const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any) => {
+const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: { 
+    acc: BankAccount, 
+    index: number, 
+    onDelete: (id: string) => void, 
+    getBankLogo: (name: string) => string | null, 
+    userName: string 
+}) => {
     const [swipeX, setSwipeX] = useState(0);
     const [isDragging, setIsDragging] = useState(false);
     const startX = useRef(0);
@@ -116,7 +127,7 @@ const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any)
     const onMouseUp = () => onDragEnd();
     const onMouseLeave = () => onDragEnd();
 
-    const logoUrl = getBankLogo(acc.bankName);
+    const logoUrl = getBankLogo(acc.bank_name);
 
     return (
         <div className={`relative w-[362px] h-auto overflow-hidden rounded-[16px] border border-[#E9EAEB] bg-white`}>
@@ -151,11 +162,11 @@ const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any)
                             <img src={logoUrl} alt="" className="w-full h-full object-contain" />
                         ) : (
                             <div className="w-full h-full rounded-full bg-[#5260FE] flex items-center justify-center text-white font-bold text-[16px]">
-                                {acc.bankName.charAt(0)}
+                                {acc.bank_name.charAt(0)}
                             </div>
                         )}
                     </div>
-                    <h3 className="text-black font-bold text-[18px] flex-1">{acc.bankName}</h3>
+                    <h3 className="text-black font-bold text-[18px] flex-1">{acc.bank_name}</h3>
                     {index === 0 && (
                         <div className="h-[24px] px-[12px] rounded-full bg-[#1CB956] flex items-center justify-center">
                             <span className="text-white text-[12px] font-bold">Primary</span>
@@ -165,7 +176,7 @@ const SwipeableBankCard = ({ acc, index, onDelete, getBankLogo, userName }: any)
 
                 <div className="mt-[8px] flex flex-col items-start">
                     <span className="text-black font-medium text-[14px]">Savings account</span>
-                    <span className="mt-[4px] text-black font-medium text-[14px]">XXXX XXXX XXXX 0960</span>
+                    <span className="mt-[4px] text-black font-medium text-[14px]">{acc.account_number}</span>
                     <span className="mt-[4px] text-black font-bold text-[14px]">{userName}</span>
                 </div>
             </div>
@@ -183,7 +194,7 @@ const AccountSettings = () => {
     const [passkeyCreated, setPasskeyCreated] = useState(false);
     const [activeTab, setActiveTab] = useState(location.state?.activeTab || "Home");
     const [searchTerm, setSearchTerm] = useState("");
-    const [searchResults, setSearchResults] = useState<{ categoryId: string; faq: any }[]>([]);
+    const [searchResults, setSearchResults] = useState<{ categoryId: string; faq: FAQItem }[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [loginDevices, setLoginDevices] = useState<{ id: string, device_name: string, location: string, last_login_at: string, is_current: boolean }[]>([]);
     const [isLoadingSessions, setIsLoadingSessions] = useState(false);
@@ -191,8 +202,8 @@ const AccountSettings = () => {
     const [bankingStep, setBankingStep] = useState<'list' | 'add_wifi' | 'validate_sim' | 'verifying_sim' | 'linked_accounts' | 'add_form' | 'verifying_bank' | 'success'>('list');
     const [isManualSubmitting, setIsManualSubmitting] = useState(false);
     const [checkingBankAccountId, setCheckingBankAccountId] = useState<string | null>(null);
-    const [selectedAccount, setSelectedAccount] = useState<any>(null);
-    const [addedAccounts, setAddedAccounts] = useState<any[]>([]);
+    const [selectedAccount, setSelectedAccount] = useState<BankAccount | null>(null);
+    const [addedAccounts, setAddedAccounts] = useState<BankAccount[]>([]);
     const [successfullyLinkedBank, setSuccessfullyLinkedBank] = useState<string | null>(null);
     const [securityStep, setSecurityStep] = useState<'list' | 'passkeys' | 'authenticator' | 'authenticator_otp' | 'two_step_intro' | 'two_step_email' | 'two_step_otp' | 'two_step_method' | 'two_step_phone' | 'two_step_phone_otp' | 'two_step_backup_codes' | 'two_step_dashboard'>('list');
     const [isAuthenticatorActive, setIsAuthenticatorActive] = useState(false);
@@ -222,7 +233,7 @@ const AccountSettings = () => {
     const [legalContent, setLegalContent] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<string>("02 August, 2025"); // Fallback
     const [isLegalLoading, setIsLegalLoading] = useState(false);
-    const [ongoingHelp, setOngoingHelp] = useState<any>(null);
+    const [ongoingHelp, setOngoingHelp] = useState<SupportTicket | null>(null);
     const [isLoadingSupport, setIsLoadingSupport] = useState(false);
 
     // Fetch Ongoing Help (Most Recent In Progress Ticket)
@@ -259,7 +270,7 @@ const AccountSettings = () => {
                 setOngoingHelp(null);
             }
         } catch (err) {
-            console.error('Error fetching ongoing help:', err);
+            // Error handled silently
         } finally {
             setIsLoadingSupport(false);
         }
@@ -279,7 +290,7 @@ const AccountSettings = () => {
         }
 
         const lowerTerm = searchTerm.toLowerCase();
-        const results: { categoryId: string; faq: any }[] = [];
+        const results: { categoryId: string; faq: FAQItem }[] = [];
 
         Object.values(helpData.helpCategories).forEach(category => {
             category.faqs.forEach(faq => {
@@ -327,7 +338,6 @@ const AccountSettings = () => {
             showToast("New support ticket raised successfully!", "success");
             fetchOngoingHelp(); // Refresh the card
         } catch (err) {
-            console.error('Error raising ticket:', err);
             showToast("Failed to raise ticket. Please try again.", "error");
         } finally {
             setIsLoadingSupport(false);
@@ -352,7 +362,6 @@ const AccountSettings = () => {
 
         // 2. Fetch from Supabase
         setIsLegalLoading(true);
-        console.log(`[Legal] Fetching ${contentType}...`);
         try {
             const { data, error } = await supabase
                 .from('rider_legal_content')
@@ -363,11 +372,8 @@ const AccountSettings = () => {
                 .maybeSingle();
 
             if (error) {
-                console.error(`[Legal] Supabase Error for ${contentType}:`, error);
                 throw error;
             }
-
-            console.log(`[Legal] Data received for ${contentType}:`, data);
 
             if (data) {
                 const formattedDate = new Date(data.updated_at).toLocaleDateString('en-GB', {
@@ -433,7 +439,7 @@ const AccountSettings = () => {
 
     const [isDeletePopupOpen, setIsDeletePopupOpen] = useState(false);
     const [isSuccessPopupOpen, setIsSuccessPopupOpen] = useState(false);
-    const [accountToDelete, setAccountToDelete] = useState<any>(null);
+    const [accountToDelete, setAccountToDelete] = useState<BankAccount | null>(null);
     const [dynamicRiderId, setDynamicRiderId] = useState<string>("Loading...");
     const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
     const [selectedSimPhoneNumber, setSelectedSimPhoneNumber] = useState<string>("");
@@ -493,13 +499,17 @@ const AccountSettings = () => {
             if (error) throw error;
             
             if (data) {
-                const mapped = data.map(acc => ({
+                const mapped: BankAccount[] = data.map(acc => ({
                     id: acc.id,
-                    bankName: acc.bank_name,
-                    accountNumber: acc.account_number_masked,
-                    accountHolderName: acc.account_holder_name,
-                    isPrimary: acc.is_primary ?? false
+                    rider_id: acc.rider_id,
+                    bank_name: acc.bank_name,
+                    account_number: acc.account_number,
+                    ifsc_code: acc.ifsc_code,
+                    account_holder_name: acc.account_holder_name,
+                    is_primary: acc.is_primary,
+                    created_at: acc.created_at
                 }));
+                
                 setAddedAccounts(mapped);
             }
         } catch (err) {
@@ -675,12 +685,9 @@ const AccountSettings = () => {
                     await Linking.openURL('App-Prefs:root=WIFI');
                 }
             } else {
-                // Mock behavior for web
                 setBankingStep("validate_sim");
             }
         } catch (err) {
-            console.error('Failed to open WiFi settings:', err);
-            // Fallback for web or dev
             setBankingStep("validate_sim");
         }
     };
@@ -689,7 +696,6 @@ const AccountSettings = () => {
         const fetchRiderData = async () => {
             if (!riderUuid) return;
             try {
-                // Fetch fresh security data directly from DB
                 const { data, error } = await supabase
                     .from('riders')
                     .select('rider_id, has_passkeys, two_fa_enabled, two_fa_method, backup_codes')
@@ -703,18 +709,15 @@ const AccountSettings = () => {
                     if (data.two_fa_method) setSelectedMethod(data.two_fa_method as 'sms' | 'auth');
                     if (data.backup_codes) setBackupCodes(data.backup_codes);
                 } else if (!error) {
-                    setDynamicRiderId("GRIDPE-RDR1023"); // Fallback if no ID yet
+                    setDynamicRiderId("GRIDPE-RDR1023");
                 }
             } catch (err) {
-                console.error('Error fetching rider data:', err);
             }
         };
 
-        // Always fetch on mount/tab change if we have a riderUuid
         fetchRiderData();
-    }, [riderUuid, activeTab]); // Re-fetch when switching tabs (e.g. going back to Security)
+    }, [riderUuid, activeTab]);
 
-    // Fetch login sessions on Security tab mount
     useEffect(() => {
         if (activeTab === 'Security' && riderId && loginDevices.length === 0) {
             (async () => {
@@ -728,7 +731,6 @@ const AccountSettings = () => {
                         setLoginDevices(data.sessions);
                     }
                 } catch (err) {
-                    console.error('Failed to fetch login sessions:', err);
                 } finally {
                     setIsLoadingSessions(false);
                 }
@@ -736,11 +738,8 @@ const AccountSettings = () => {
         }
     }, [activeTab, riderId]);
 
-    console.log('AccountSettings render:', { kycStatus, fullName, dynamicRiderId });
-
     const menuItems = ["Home", "Personal Info", "Security", "Banking", "Privacy & Data", "Help & Support"];
 
-    // Get actual data for the rider
     const riderName = fullName || "";
     const riderMobile = phoneNumber ? `+91 ${phoneNumber}` : "";
     const riderIdValue = dynamicRiderId;
@@ -755,7 +754,6 @@ const AccountSettings = () => {
     };
 
     const handleUploadComplete = () => {
-        // Step 1: Complete the upload step, mark Support Provided as in_progress
         setSupportStatusSteps(prev => {
             const next = [...prev];
             const uploadStep = next.find(s => s.label === "Upload Required Documents");
@@ -773,7 +771,6 @@ const AccountSettings = () => {
             return next;
         });
 
-        // Step 2: After a delay, simulate full ticket resolution
         setTimeout(() => {
             setSupportStatusSteps(prev => {
                 const next = [...prev];
@@ -792,7 +789,6 @@ const AccountSettings = () => {
                 }
                 return next;
             });
-            // Mark ongoing support as resolved — removes from Help & Support page
             setOngoingSupport(prev => prev ? { ...prev, status: "Resolved" } : null);
         }, 3000);
     };
@@ -800,7 +796,6 @@ const AccountSettings = () => {
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (file) {
-            // Check if file is jpg, jpeg, or png
             const allowedTypes = ["image/jpeg", "image/jpg", "image/png"];
             if (allowedTypes.includes(file.type)) {
                 setIsUploadingAvatar(true);
@@ -808,7 +803,6 @@ const AccountSettings = () => {
                     await updateAvatar(file);
                     showToast("Profile photo updated successfully!", "success");
                 } catch (err) {
-                    console.error('Upload failed:', err);
                     showToast("Failed to upload profile photo. Please try again.", "error");
                 } finally {
                     setIsUploadingAvatar(false);
@@ -826,8 +820,6 @@ const AccountSettings = () => {
         { label: "Security", icon: securityIcon, tab: "Security" },
         { label: "Bank & UPI", icon: bankIcon, tab: "Banking" },
     ];
-
-
 
     useEffect(() => {
         if (activeTab !== "Privacy & Data") return;
@@ -866,12 +858,10 @@ const AccountSettings = () => {
             const accountId = accountToDelete.id;
             const previousAccounts = [...addedAccounts];
 
-            // 1. Optimistic UI update
             setAddedAccounts(prev => prev.filter(acc => acc.id !== accountId));
             setIsDeletePopupOpen(false);
 
             try {
-                // 2. Persistent Delete from Supabase
                 const { error } = await supabase
                     .from('rider_bank_accounts')
                     .delete()
@@ -880,8 +870,6 @@ const AccountSettings = () => {
                 if (error) throw error;
                 showToast("Bank account has been successfully removed.", "delete");
             } catch (err) {
-                console.error('Error deleting account:', err);
-                // 3. Rollback on failure
                 setAddedAccounts(previousAccounts);
                 showToast("Failed to delete the bank account. Please try again.", "error");
             }
@@ -890,16 +878,10 @@ const AccountSettings = () => {
 
     const handleEnrollPasskey = async () => {
         try {
-            console.log('Initiating Corbado passkey registration...');
-            
             if (!isSdkReady) {
                 throw new Error('Corbado SDK not initialized');
             }
 
-            // 1. Get Corbado Connect Token
-            // This is required to resolve 401 Unauthorized (missing cbo_refresh_token)
-            console.log('Fetching Corbado Connect Token...');
-            
             if (!email) {
                 showToast("Please add an email to your account first to enable Passkeys.", "error");
                 throw new Error('Email is required for passkey registration');
@@ -922,19 +904,14 @@ const AccountSettings = () => {
                 throw new Error('Failed to obtain Corbado Connect Token');
             }
 
-            // Let the specialized React component take over
             setConnectToken(connectToken);
 
         } catch (err: any) {
-            console.error('Corbado passkey registration failed:', err);
-            // Handle cancellation or lack of support
             showToast("Passkey setup cancelled or not supported on this device.", "error");
         }
     };
 
     const handleHybridEnrollment = () => {
-        // Placeholder for QR code hybrid flow
-        // In a real implementation, this would trigger the 'hybrid' transport
         showToast("Hybrid enrollment (QR code) initiated", "success");
     };
 
@@ -945,32 +922,22 @@ const AccountSettings = () => {
             setVerificationState("loading");
             const timer = setTimeout(() => {
                 setVerificationState("success");
-            }, 3000); // 3 seconds simulation
+            }, 3000);
             return () => clearTimeout(timer);
         }
     }, [bankingStep]);
 
     const handleConnectBank = () => {
-        // Optimization: If already has accounts, skip verification steps
         if (addedAccounts.length > 0) {
             setBankingStep("linked_accounts");
             return;
         }
 
-        // Real WiFi detection logic
         const connection = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
-        console.log("Connection Info:", {
-            type: connection?.type,
-            effectiveType: connection?.effectiveType,
-            downlink: connection?.downlink
-        });
 
-        // For testing/desktop: if type is missing or wifi, show the warning
-        // This ensures the user sees the screen for verification
         if (!connection || connection.type === 'wifi' || connection.type === undefined) {
             setBankingStep("add_wifi");
         } else {
-            // If on mobile data, proceed to SIM validation
             setBankingStep("validate_sim");
         }
     };
@@ -980,75 +947,55 @@ const AccountSettings = () => {
                         (activeTab === "Privacy & Data" && privacyStep === 'list');
 
     return (
-        <div className={`relative w-[393px] h-screen bg-[#F5F5F5] font-satoshi flex flex-col items-center ${isScrollable ? 'overflow-y-auto' : 'overflow-hidden'}`}>
-            {/* Purple Glowing Orb */}
-            <div
-                className="absolute top-[-20px] left-1/2 -translate-x-1/2 w-[166px] h-[40px] rounded-full pointer-events-none z-0"
-                style={{
-                    backgroundColor: "#5260FE",
-                    filter: "blur(60px)",
-                    opacity: 0.8,
-                }}
-            />
-
-            <div className="flex-none flex items-center w-[362px] px-0 pt-12 pb-2 relative z-10">
-                <button
-                    onClick={() => {
-                        if (activeTab === "Security" && (securityStep === "passkeys" || securityStep === "authenticator" || securityStep === "authenticator_otp" || securityStep === "two_step_intro" || securityStep === "two_step_email" || securityStep === "two_step_otp" || securityStep === "two_step_method" || securityStep === "two_step_phone" || securityStep === "two_step_phone_otp" || securityStep === "two_step_backup_codes" || securityStep === "two_step_dashboard")) {
-                            if (securityStep === "two_step_backup_codes" && fromDashboard) {
-                                setSecurityStep("two_step_dashboard");
-                                setFromDashboard(false);
-                            } else {
-                                setSecurityStep("list");
-                            }
-                            return;
+        <div className="relative w-full h-[100dvh] bg-[#FDFDFD] font-satoshi flex flex-col items-center overflow-hidden">
+            <PageHeader 
+                title={
+                    activeTab === "Privacy & Data" && privacyStep === "policy" ? "Privacy Policy" : 
+                    activeTab === "Privacy & Data" && privacyStep === "terms" ? "Terms & Conditions" : 
+                    "Account Settings"
+                }
+                onBack={() => {
+                    if (activeTab === "Security" && (securityStep === "passkeys" || securityStep === "authenticator" || securityStep === "authenticator_otp" || securityStep === "two_step_intro" || securityStep === "two_step_email" || securityStep === "two_step_otp" || securityStep === "two_step_method" || securityStep === "two_step_phone" || securityStep === "two_step_phone_otp" || securityStep === "two_step_backup_codes" || securityStep === "two_step_dashboard")) {
+                        if (securityStep === "two_step_backup_codes" && fromDashboard) {
+                            setSecurityStep("two_step_dashboard");
+                            setFromDashboard(false);
+                        } else {
+                            setSecurityStep("list");
                         }
-                        if (activeTab === "Privacy & Data" && (privacyStep === "policy" || privacyStep === "terms")) {
-                            setPrivacyStep("list");
-                            return;
-                        }
-                        if (activeTab === "Banking") {
-                            if (bankingStep === "add_wifi") {
+                        return;
+                    }
+                    if (activeTab === "Privacy & Data" && (privacyStep === "policy" || privacyStep === "terms")) {
+                        setPrivacyStep("list");
+                        return;
+                    }
+                    if (activeTab === "Banking") {
+                        if (bankingStep === "add_wifi") {
+                            setBankingStep("list");
+                        } else if (bankingStep === "validate_sim") {
+                            setBankingStep("list");
+                        } else if (bankingStep === "verifying_sim") {
+                            setBankingStep("validate_sim");
+                        } else if (bankingStep === "linked_accounts") {
+                            if (addedAccounts.length > 0) {
                                 setBankingStep("list");
-                            } else if (bankingStep === "validate_sim") {
-                                setBankingStep("list");
-                            } else if (bankingStep === "verifying_sim") {
-                                setBankingStep("validate_sim");
-                            } else if (bankingStep === "linked_accounts") {
-                                if (addedAccounts.length > 0) {
-                                    setBankingStep("list");
-                                } else {
-                                    setBankingStep("verifying_sim");
-                                }
-                            } else if (bankingStep === "success") {
-                                setBankingStep("list");
-                            } else if (bankingStep === "add_form") {
-                                setBankingStep("linked_accounts");
                             } else {
-                                navigate('/dashboard');
+                                setBankingStep("verifying_sim");
                             }
+                        } else if (bankingStep === "success") {
+                            setBankingStep("list");
+                        } else if (bankingStep === "add_form") {
+                            setBankingStep("linked_accounts");
                         } else {
                             navigate('/dashboard');
                         }
-                    }}
-                    className="w-[32px] h-[32px] rounded-full bg-white shadow-sm flex items-center justify-center transition-transform active:scale-90"
-                >
-                    <img src={chevronBackward} alt="Back" className="w-[18px] h-[18px] brightness-0" />
-                </button>
+                    } else {
+                        navigate('/dashboard');
+                    }
+                }}
+            />
 
-                <div className="flex-1 flex justify-center mr-[32px]">
-                    <h1 className="text-black text-[22px] font-medium leading-none">
-                        {activeTab === "Privacy & Data" && privacyStep === "policy" ? "Privacy Policy" : 
-                         activeTab === "Privacy & Data" && privacyStep === "terms" ? "Terms & Conditions" : 
-                         "Account Settings"}
-                    </h1>
-                </div>
-            </div>
-
-            {/* Slider Menu: 25px below heading */}
             <div className="mt-6 w-full overflow-x-auto no-scrollbar flex relative z-10 shrink-0">
                 <div className="flex min-w-full px-4 relative">
-                    {/* Gray Divider Bar */}
                     <div className="absolute bottom-0 left-0 w-[630px] h-[5px] bg-[#DFDFDF] z-0" />
 
                     {menuItems.map((item) => (
@@ -1068,21 +1015,17 @@ const AccountSettings = () => {
                 </div>
             </div>
 
-            {/* Content Area */}
             <div className="w-[362px] flex flex-col items-center flex-1">
                 {activeTab === "Home" && (
                     <>
-                        {/* Avatar: 18px below divider */}
                         <div className="mt-[18px] w-[83px] h-[83px] rounded-full border border-gray-100 overflow-hidden shrink-0">
                             <img src={currentAvatar} alt="Avatar" className="w-full h-full object-cover" />
                         </div>
 
-                        {/* Name: 12px below avatar */}
                         <h2 className="mt-[12px] text-black font-bold text-[22px] leading-tight text-center">
                             {riderName}
                         </h2>
 
-                        {/* Mobile Info: 3px below name */}
                         <div className="mt-[3px] flex items-center justify-center gap-2">
                             <span className="text-black font-medium text-[14px] leading-none">
                                 {riderMobile}
@@ -1090,12 +1033,10 @@ const AccountSettings = () => {
                             <img src={verifiedBadge} alt="Verified" className="w-[16px] h-[16px]" />
                         </div>
 
-                        {/* KYC Text: 18px below mobile info */}
                         <p className="mt-[18px] w-[340px] text-black/50 font-medium italic text-[12px] text-center leading-tight">
                             These details are verified from your KYC and cannot be edited.
                         </p>
 
-                        {/* Rider ID Row: 18px below KYC text */}
                         <div className="mt-[18px] w-full flex items-center justify-between">
                             <span className="text-black font-medium text-[14px]">
                                 Rider ID
@@ -1108,7 +1049,6 @@ const AccountSettings = () => {
                             </div>
                         </div>
 
-                        {/* Quick Link Boxes: 27px below rider id */}
                         <div className="mt-[27px] w-full flex flex-wrap gap-[13px] justify-center">
                             {quickLinks.map((link) => (
                                 <button
@@ -1124,7 +1064,6 @@ const AccountSettings = () => {
                             ))}
                         </div>
 
-                        {/* Security & KYC Banner: 18px below boxes */}
                         <div
                             className={`mt-[18px] w-[362px] h-[82px] rounded-[13px] border flex items-center relative overflow-hidden shrink-0
                                     ${kycStatus === "verified" ? "border-[#1CB956]" : kycStatus === "in_review" ? "border-[#FFCC00]" : "border-[#FF3B30]"}
@@ -1134,7 +1073,6 @@ const AccountSettings = () => {
                             }}
                         >
                             <div className="flex items-center ml-[19px]">
-                                {/* Icon Circle */}
                                 <div
                                     className="w-[39px] h-[39px] rounded-full border flex items-center justify-center"
                                     style={{
@@ -1145,7 +1083,6 @@ const AccountSettings = () => {
                                     <img src={kycLockIcon} alt="KYC" className="w-[14px] h-[14px]" />
                                 </div>
 
-                                {/* Text Content */}
                                 <div className="ml-[20px] flex flex-col">
                                     <span className="text-black font-medium text-[14px] leading-tight">Security & KYC</span>
                                     <span
@@ -1157,13 +1094,11 @@ const AccountSettings = () => {
                                 </div>
                             </div>
 
-                            {/* CTA Button */}
                             <button className="absolute top-[21.5px] right-[18px] w-[118px] h-[39px] rounded-full bg-black text-white text-[12px] font-medium flex items-center justify-center transition-transform active:scale-95">
                                 Check Security
                             </button>
                         </div>
 
-                        {/* Logout CTA: 42px below banner */}
                         <button
                             onClick={() => {
                                 logout();
@@ -1175,7 +1110,6 @@ const AccountSettings = () => {
                             <img src={logoutIcon} alt="Logout" className="ml-2 w-[20px] h-[20px] brightness-0 invert" />
                         </button>
 
-                        {/* Footer: Bottom Left */}
                         <div className="mt-auto w-full flex flex-col items-start pb-[32px]">
                             <h3 className="text-[40px] font-black text-black/30 leading-none">grid.pe</h3>
                             <p className="mt-3 text-[14px] font-medium text-black/30 leading-tight">
@@ -1187,7 +1121,6 @@ const AccountSettings = () => {
 
                 {activeTab === "Personal Info" && (
                     <div className="w-full flex flex-col items-start px-0">
-                        {/* Icon and Title Row: 19px below slider menu */}
                         <div className="mt-[19px] flex items-center">
                             <img src={personalInfoIcon} alt="Personal Info" className="w-[24px] h-[24px]" />
                             <h2 className="ml-[12px] text-black font-bold text-[22px] leading-tight">
@@ -1195,7 +1128,6 @@ const AccountSettings = () => {
                             </h2>
                         </div>
 
-                        {/* Avatar and Upload Row: 25px below header */}
                         <div className="mt-[25px] flex items-center justify-between w-full">
                             <div className="w-[83px] h-[83px] rounded-full border border-gray-100 overflow-hidden shrink-0">
                                 <img src={currentAvatar} alt="Avatar" className="w-full h-full object-cover" />
@@ -1207,7 +1139,7 @@ const AccountSettings = () => {
                                 disabled={isUploadingAvatar}
                             >
                                 {isUploadingAvatar ? (
-                                    <div className="w-[14px] h-[14px] border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    <LoadingSpinner />
                                 ) : (
                                     "Upload Photo"
                                 )}
@@ -1221,7 +1153,6 @@ const AccountSettings = () => {
                             />
                         </div>
 
-                        {/* Name Section: 29px below avatar */}
                         <div className="mt-[29px] w-full flex flex-col items-start relative px-0">
                             <span className="text-black font-medium text-[14px] leading-none">Name</span>
                             <div className="mt-[4px] w-full flex items-center justify-between">
@@ -1232,7 +1163,6 @@ const AccountSettings = () => {
                             </div>
                         </div>
 
-                        {/* Mobile Number Section: 9px below Name */}
                         <div className="mt-[9px] w-full flex flex-col items-start relative px-0">
                             <span className="text-black font-medium text-[14px] leading-none">Mobile Number</span>
                             <div className="mt-[4px] w-full flex items-center justify-between">
@@ -1243,15 +1173,12 @@ const AccountSettings = () => {
                             </div>
                         </div>
 
-                        {/* Disclaimer: 16px below Mobile */}
                         <p className="mt-[16px] w-full text-black/50 font-medium italic text-[12px] leading-tight text-left">
                             These details are verified from your KYC and cannot be edited.
                         </p>
 
-                        {/* Divider: 22px below disclaimer */}
                         <div className="mt-[22px] w-[362px] h-[1px] bg-[#E9EAEB]" />
 
-                        {/* Email Section: 18px below divider */}
                         <div className="mt-[18px] w-full flex flex-col items-start relative px-0">
                             <span className="text-black font-medium text-[14px] leading-none">Email ID</span>
                             <div
@@ -1277,7 +1204,6 @@ const AccountSettings = () => {
                             </div>
                         </div>
 
-                        {/* Language Section: 12px below Email */}
                         <div className="mt-[12px] w-full flex flex-col items-start relative px-0">
                             <span className="text-black font-medium text-[14px] leading-none">Language</span>
                             <div className="mt-[4px] w-full flex items-center justify-between">
@@ -1294,7 +1220,6 @@ const AccountSettings = () => {
                     <div className="w-full flex flex-col items-start px-0 flex-1">
                         {securityStep === "list" ? (
                             <>
-                                {/* Icon and Title Row: 19px below slider menu */}
                                 <div className="mt-[19px] flex items-center">
                                     <img src={securityIcon} alt="Security" className="w-[24px] h-[24px]" />
                                     <h2 className="ml-[12px] text-black font-bold text-[22px] leading-tight">
@@ -1302,15 +1227,11 @@ const AccountSettings = () => {
                                     </h2>
                                 </div>
 
-                                {/* Logging in Section: 18px below */}
-                        {/* Logging in Section: 18px below */}
                                 <h2 className="mt-[18px] text-black font-bold text-[22px] leading-tight">
                                     Logging in to Grid.pe
                                 </h2>
 
-                                {/* Security Options: 19px below heading */}
                                 <div className="mt-[19px] w-full flex flex-col gap-[22px]">
-                                    {/* Passkeys */}
                                     <div
                                         className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
                                         onClick={() => setSecurityStep("passkeys")}
@@ -1331,7 +1252,6 @@ const AccountSettings = () => {
                                         </div>
                                     </div>
 
-                                    {/* Authenticator App */}
                                     <div
                                         className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
                                         onClick={() => {
@@ -1363,7 +1283,6 @@ const AccountSettings = () => {
                                         )}
                                     </div>
 
-                                    {/* 2-step verification */}
                                     <div
                                         className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
                                         onClick={() => {
@@ -1391,10 +1310,8 @@ const AccountSettings = () => {
                                     </div>
                                 </div>
 
-                                {/* Divider: 26px below */}
                                 <div className="mt-[26px] w-[362px] h-[1px] bg-[#E9EAEB]" />
 
-                                {/* KYC Section: 12px below divider */}
                                 <div className="mt-[12px] w-full flex flex-col items-start px-0">
                                     <h2 className="text-black font-bold text-[22px] leading-tight">KYC</h2>
                                     <p className="mt-[6px] text-black font-medium text-[15px] leading-tight text-left">
@@ -1402,10 +1319,8 @@ const AccountSettings = () => {
                                     </p>
                                 </div>
 
-                                {/* Divider: 24px below KYC */}
                                 <div className="mt-[24px] w-[362px] h-[1px] bg-[#E9EAEB]" />
 
-                                {/* Login Activity Section: 12px below divider */}
                                 <div className="mt-[12px] w-full flex flex-col items-start px-0">
                                     <h2 className="text-black font-bold text-[22px] leading-tight">Login Activity</h2>
                                     <p className="mt-[6px] text-black font-medium text-[15px] leading-tight text-left">
@@ -1413,7 +1328,6 @@ const AccountSettings = () => {
                                     </p>
                                 </div>
 
-                                {/* Device Login Containers: 16px spacing, only show if separate logins exist */}
                                  {isLoadingSessions ? (
                                     <div className="mt-[16px] w-[362px] flex flex-col gap-[12px] mb-10 shrink-0">
                                         {[1, 2].map((i) => (
@@ -1464,7 +1378,6 @@ const AccountSettings = () => {
                             </>
                         ) : securityStep === "passkeys" ? (
                             <div className="w-full flex-1 flex flex-col">
-                                {/* Header: Shield + Title */}
                                 <div className="mt-[29px] flex items-center gap-[12px]">
                                     <img src={shieldIcon} alt="Security" className="w-[24px] h-[24px]" />
                                     <h2 className="text-black font-bold text-[22px] leading-tight text-left">
@@ -1472,7 +1385,6 @@ const AccountSettings = () => {
                                     </h2>
                                 </div>
 
-                                {/* Description */}
                                 <div className="mt-[24px] flex flex-col gap-[4px]">
                                     <p className="text-black font-medium text-[15px] leading-tight text-left">
                                         Passkeys are easier and more secure.
@@ -1484,7 +1396,6 @@ const AccountSettings = () => {
 
                                 {savedPasskeys.length > 0 ? (
                                     <>
-                                        {/* Passkey List */}
                                         <div className="mt-[24px] flex flex-col gap-[16px]">
                                             {savedPasskeys.map((pk) => (
                                                 <div key={pk.id} className="w-full flex items-center justify-between">
@@ -1512,7 +1423,6 @@ const AccountSettings = () => {
                                             ))}
                                         </div>
 
-                                        {/* Create passkey button at bottom */}
                                         <div className="mt-auto pb-[32px] flex flex-col gap-[12px] w-full">
                                             <button
                                                 className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
@@ -1527,7 +1437,6 @@ const AccountSettings = () => {
                                     </>
                                 ) : (
                                     <>
-                                        {/* List of methods */}
                                         <div className="mt-[24px] flex flex-col gap-[18px]">
                                             <div className="flex items-center gap-[12px]">
                                                 <img src={faceIdIcon} alt="Face ID" className="w-[24px] h-[24px]" />
@@ -1543,7 +1452,6 @@ const AccountSettings = () => {
                                             </div>
                                         </div>
 
-                                        {/* Buttons at bottom */}
                                         <div className="mt-auto pb-[32px] flex flex-col gap-[12px] w-full">
                                             <button
                                                 className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
@@ -1563,7 +1471,6 @@ const AccountSettings = () => {
                             </div>
                         ) : securityStep === "authenticator" ? (
                             <div className="w-full flex-1 flex flex-col">
-                                {/* Header: Shield + Title */}
                                 <div className="mt-[29px] flex items-center gap-[12px]">
                                     <img src={shieldIcon} alt="Security" className="w-[24px] h-[24px]" />
                                     <h2 className="text-black font-bold text-[22px] leading-tight text-left">
@@ -1571,11 +1478,10 @@ const AccountSettings = () => {
                                     </h2>
                                 </div>
 
-                                {/* QR Code Section */}
                                 <div className="mt-[32px] flex flex-col items-center">
                                     {isTotpLoading ? (
                                         <div className="w-[150px] h-[150px] flex items-center justify-center">
-                                            <div className="w-[32px] h-[32px] border-4 border-black/10 border-t-black rounded-full animate-spin" />
+                                            <LoadingSpinner />
                                         </div>
                                     ) : qrDataUrl ? (
                                         <img src={qrDataUrl} alt="TOTP QR Code" width={200} height={200} />
@@ -1603,7 +1509,6 @@ const AccountSettings = () => {
                                     </button>
                                 </div>
 
-                                {/* Instructions List */}
                                 <div className="mt-[40px] flex flex-col gap-[12px] px-0">
                                     <div className="flex gap-[12px] items-start">
                                         <span className="text-black font-medium text-[15px] leading-tight">1.</span>
@@ -1625,7 +1530,6 @@ const AccountSettings = () => {
                                     </div>
                                 </div>
 
-                                {/* Next Button */}
                                 <div className="mt-auto pb-[32px] w-full">
                                     <button
                                         className={`w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98] ${!totpSecret ? 'opacity-50 pointer-events-none' : ''}`}
@@ -1637,7 +1541,6 @@ const AccountSettings = () => {
                             </div>
                         ) : securityStep === "authenticator_otp" ? (
                             <div className="w-full flex-1 flex flex-col">
-                                {/* Header: Shield + Title */}
                                 <div className="mt-[29px] flex items-center gap-[12px]">
                                     <img src={shieldIcon} alt="Security" className="w-[24px] h-[24px]" />
                                     <h2 className="text-black font-bold text-[22px] leading-tight text-left">
@@ -1645,12 +1548,10 @@ const AccountSettings = () => {
                                     </h2>
                                 </div>
 
-                                {/* Subtext */}
                                 <p className="mt-[25px] text-black font-medium text-[15px] leading-tight text-left">
                                     Enter the 6-digit code generated by your authenticator app
                                 </p>
 
-                                {/* OTP Input Boxes */}
                                 <div className="mt-[32px] flex gap-[8px] justify-start">
                                     {authenticatorOtp.map((digit, index) => (
                                         <input
@@ -1679,7 +1580,6 @@ const AccountSettings = () => {
                                     ))}
                                 </div>
 
-                                {/* Next Button */}
                                 <div className="mt-auto pb-[32px] w-full">
                                     <button
                                         className={`w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98] ${authenticatorOtp.join('').length === 6 && !isTotpVerifying ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}
@@ -1704,7 +1604,6 @@ const AccountSettings = () => {
                                                     showToast(data?.error || "Invalid code. Please try again.", "error");
                                                 }
                                             } catch (err: any) {
-                                                console.error('TOTP verification failed:', err);
                                                 showToast("Verification failed. Please try again.", "error");
                                             } finally {
                                                 setIsTotpVerifying(false);
@@ -1717,7 +1616,6 @@ const AccountSettings = () => {
                             </div>
                         ) : securityStep === "two_step_intro" ? (
                             <div className="w-full flex-1 flex flex-col">
-                                {/* Header: Shield + Title */}
                                 <div className="mt-[29px] flex items-center gap-[12px]">
                                     <img src={shieldIcon} alt="Security" className="w-[24px] h-[24px]" />
                                     <h2 className="text-black font-bold text-[22px] leading-tight text-left">
@@ -1725,7 +1623,6 @@ const AccountSettings = () => {
                                     </h2>
                                 </div>
 
-                                {/* Description */}
                                 <div className="mt-[24px] flex flex-col gap-[20px]">
                                     <p className="text-black font-medium text-[15px] leading-tight text-left">
                                         Add extra security to your account with 2-step verification and prevent unauthorized access to your account.
@@ -1735,7 +1632,6 @@ const AccountSettings = () => {
                                     </p>
                                 </div>
 
-                                {/* Buttons at bottom */}
                                 <div className="mt-auto pb-[32px] flex flex-col gap-[12px] w-full">
                                     <button
                                         className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98]"
@@ -1759,19 +1655,16 @@ const AccountSettings = () => {
                             </div>
                         ) : securityStep === "two_step_email" ? (
                             <div className="w-full flex-1 flex flex-col">
-                                {/* Header: Title */}
                                 <div className="mt-[26px]">
                                     <h2 className="text-black font-bold text-[22px] leading-tight text-left">
                                         Email ID
                                     </h2>
                                 </div>
 
-                                {/* Description */}
                                 <p className="mt-[24px] text-black font-medium text-[15px] leading-tight text-left">
                                     You'll use this email to receive messages, sign in and recover your account.
                                 </p>
 
-                                {/* Input Section */}
                                 <div className="mt-[24px] flex flex-col gap-[8px]">
                                     <div className="w-full h-[48px] px-[16px] bg-[#F7F8FA] border border-[#E6E8EB] rounded-full flex items-center">
                                         <input
@@ -1796,7 +1689,6 @@ const AccountSettings = () => {
                                     )}
                                 </div>
 
-                                {/* Update Button */}
                                 <div className="mt-auto pb-[32px] w-full">
                                     <button
                                         className={`w-full h-[48px] rounded-full font-medium text-[16px] transition-transform active:scale-[0.98] ${tempEmail ? 'bg-[#5260FE] text-white opacity-100' : 'bg-[#E0E2FF] text-white opacity-100 cursor-not-allowed'}`}
@@ -1816,7 +1708,6 @@ const AccountSettings = () => {
                             </div>
                         ) : securityStep === "two_step_otp" ? (
                             <div className="w-full flex-1 flex flex-col">
-                                {/* Header: Shield + Title */}
                                 <div className="mt-[29px] flex items-center gap-[12px]">
                                     <img src={shieldIcon} alt="Security" className="w-[24px] h-[24px]" />
                                     <h2 className="text-black font-bold text-[22px] leading-tight text-left">
@@ -1824,14 +1715,12 @@ const AccountSettings = () => {
                                     </h2>
                                 </div>
 
-                                {/* Instruction Text */}
                                 <div className="mt-[24px]">
                                     <p className="text-black font-medium text-[14px] leading-[1.4] text-left">
                                         Enter the 6-digit code received in your registered email id <span className="font-bold">{tempEmail || "your email"}</span>
                                     </p>
                                 </div>
 
-                                {/* OTP Inputs */}
                                 <div className="mt-[16px] flex gap-[8px] justify-start">
                                     {twoStepOtp.map((digit, index) => (
                                         <input
@@ -1860,19 +1749,16 @@ const AccountSettings = () => {
                                     ))}
                                 </div>
 
-                                {/* Resend Link */}
                                 <div className="mt-[12px] flex justify-end w-full pr-[2px]">
                                     <span className="text-[#5260FE] font-medium text-[14px] cursor-pointer">
                                         Resend OTP in 20s
                                     </span>
                                 </div>
 
-                                {/* Tip Text */}
                                 <p className="mt-[16px] text-black/50 font-medium text-[14px] text-left">
                                     Tip: Make sure to check your spam folders.
                                 </p>
 
-                                {/* Next Button */}
                                 <div className="mt-auto pb-[32px] w-full">
                                     <button
                                         className={`w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98] ${twoStepOtp.join('').length === 6 ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}
@@ -1891,21 +1777,17 @@ const AccountSettings = () => {
                             </div>
                         ) : securityStep === "two_step_method" ? (
                             <div className="w-full flex-1 flex flex-col">
-                                {/* Header: Title */}
                                 <div className="mt-[26px]">
                                     <h2 className="text-black font-bold text-[22px] leading-tight text-left">
                                         Choose a verification method
                                     </h2>
                                 </div>
 
-                                {/* Description */}
                                 <p className="mt-[24px] text-black font-medium text-[16px] leading-tight text-left w-[362px]">
                                     Add extra security to your account with 2-step verification.
                                 </p>
 
-                                {/* Options List */}
                                 <div className="mt-[25px] flex flex-col gap-[16px]">
-                                    {/* Text message (SMS) */}
                                     <div
                                         className="flex items-center justify-between cursor-pointer active:bg-gray-50 transition-colors"
                                         onClick={() => {
@@ -1923,7 +1805,6 @@ const AccountSettings = () => {
                                         <img src={chevronForward} alt="Arrow" className="w-[20px] h-[20px] flex-shrink-0" />
                                     </div>
 
-                                    {/* Authenticator app */}
                                     <div
                                         className="flex items-center justify-between cursor-pointer active:bg-gray-50 transition-colors"
                                         onClick={() => {
@@ -1944,19 +1825,16 @@ const AccountSettings = () => {
                             </div>
                         ) : securityStep === "two_step_phone" ? (
                             <div className="w-full flex-1 flex flex-col">
-                                {/* Header: Title */}
                                 <div className="mt-[26px]">
                                     <h2 className="text-black font-bold text-[22px] leading-tight text-left">
                                         Phone number
                                     </h2>
                                 </div>
 
-                                {/* Description */}
                                 <p className="mt-[24px] text-black font-medium text-[15px] leading-tight text-left">
                                     You'll use this number to get notifications, sign in and recover your account.
                                 </p>
 
-                                {/* Input Section */}
                                 <div className="mt-[24px] flex flex-col gap-[8px]">
                                     <div className="w-full h-[48px] px-[16px] bg-[#F7F8FA] border border-[#E6E8EB] rounded-full flex items-center">
                                         <div className="flex items-center gap-[12px] pr-[12px] border-r border-[#E6E8EB]">
@@ -1978,7 +1856,6 @@ const AccountSettings = () => {
                                     </p>
                                 </div>
 
-                                {/* Continue Button */}
                                 <div className="mt-auto pb-[32px] w-full">
                                     <button
                                         className={`w-full h-[48px] rounded-full font-medium text-[16px] transition-transform active:scale-[0.98] ${tempPhone.length === 10 ? 'bg-[#5260FE] text-white' : 'bg-[#E0E2FF] text-white cursor-not-allowed'}`}
@@ -1991,21 +1868,18 @@ const AccountSettings = () => {
                             </div>
                         ) : securityStep === "two_step_phone_otp" ? (
                             <div className="w-full flex-1 flex flex-col">
-                                {/* Header: Title */}
                                 <div className="mt-[26px]">
                                     <h2 className="text-black font-bold text-[22px] leading-tight text-left">
                                         Phone number
                                     </h2>
                                 </div>
 
-                                {/* Instruction Text */}
                                 <div className="mt-[24px]">
                                     <p className="text-black font-medium text-[14px] leading-[1.4] text-left">
                                         Enter the 6-digit code sent to you at <span className="font-bold">+91 {tempPhone}</span>
                                     </p>
                                 </div>
 
-                                {/* OTP Inputs */}
                                 <div className="mt-[32px] flex gap-[8px] justify-start">
                                     {phoneOtp.map((digit, index) => (
                                         <input
@@ -2034,14 +1908,12 @@ const AccountSettings = () => {
                                     ))}
                                 </div>
 
-                                {/* Resend Link */}
                                 <div className="mt-[12px] flex justify-end w-full pr-[2px]">
                                     <span className="text-[#5260FE] font-medium text-[14px] cursor-pointer">
                                         Resend OTP in 20s
                                     </span>
                                 </div>
 
-                                {/* Next Button */}
                                 <div className="mt-auto pb-[32px] w-full">
                                     <button
                                         className={`w-full h-[48px] rounded-full bg-black text-white font-medium text-[16px] transition-transform active:scale-[0.98] ${(phoneOtp.join('').length === 6 && !isSettingUpSms) ? 'opacity-100' : 'opacity-50 pointer-events-none'} flex items-center justify-center`}
@@ -2065,7 +1937,6 @@ const AccountSettings = () => {
                                                         setPhoneOtp(['', '', '', '', '', '']);
                                                     }
                                                 } catch (err) {
-                                                    console.error('Failed to setup SMS 2FA:', err);
                                                     showToast('Failed to enable 2-step verification.', 'error');
                                                 } finally {
                                                     setIsSettingUpSms(false);
@@ -2076,26 +1947,23 @@ const AccountSettings = () => {
                                         }}
                                     >
                                         {isSettingUpSms ? (
-                                            <div className="w-[20px] h-[20px] border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            <LoadingSpinner />
                                         ) : "Next"}
                                     </button>
                                 </div>
                             </div>
                         ) : securityStep === "two_step_backup_codes" ? (
                             <div className="w-full flex-1 flex flex-col">
-                                {/* Header: Title */}
                                 <div className="mt-[26px]">
                                     <h2 className="text-black font-bold text-[22px] leading-tight text-left">
                                         Backup codes
                                     </h2>
                                 </div>
 
-                                {/* Description */}
                                 <p className="mt-[24px] text-black font-medium text-[15px] leading-tight text-left">
                                     Screenshot these codes and store them in a safe place. If you have trouble receiving a verification code, you can use one of these codes instead. Each code can only be used once. <span className="font-bold underline cursor-pointer">Learn more</span>
                                 </p>
 
-                                 {/* Backup Codes List */}
                                  <div className="mt-[32px] grid grid-cols-2 gap-x-[20px] gap-y-[12px]">
                                      {backupCodes.map((item, i) => (
                                          <span 
@@ -2107,7 +1975,6 @@ const AccountSettings = () => {
                                      ))}
                                  </div>
 
-                                 {/* Checkbox for Setup flow */}
                                  {!fromDashboard && (
                                      <div 
                                         className="mt-[32px] flex items-center gap-[12px] cursor-pointer"
@@ -2122,7 +1989,6 @@ const AccountSettings = () => {
                                      </div>
                                  )}
  
-                                 {/* Buttons at bottom */}
                                  <div className="mt-auto pb-[32px] flex flex-col gap-[12px] w-full">
                                      {!fromDashboard && (
                                          <button
@@ -2142,14 +2008,13 @@ const AccountSettings = () => {
                                          disabled={isRegeneratingCodes}
                                      >
                                          {isRegeneratingCodes ? (
-                                             <div className="w-[20px] h-[20px] border-2 border-[#5260FE]/30 border-t-[#5260FE] rounded-full animate-spin" />
+                                             <LoadingSpinner />
                                          ) : "Get new codes"}
                                      </button>
                                  </div>
                             </div>
                         ) : securityStep === "two_step_dashboard" ? (
                             <div className="w-full flex-1 flex flex-col">
-                                {/* Header Row with Shield and Title */}
                                 <div className="mt-[26px] flex items-center">
                                     <img src={shieldIcon} alt="Shield" className="w-[24px] h-[24px]" />
                                     <h2 className="ml-[12px] text-black font-bold text-[22px] leading-tight text-left">
@@ -2157,12 +2022,10 @@ const AccountSettings = () => {
                                     </h2>
                                 </div>
 
-                                {/* Description */}
                                 <p className="mt-[24px] text-black font-medium text-[15px] leading-tight text-left">
                                     Add extra security to your account with 2-step verification and prevent unauthorized access to your account.
                                 </p>
 
-                                {/* Toggle Row */}
                                 <div className="mt-[32px] w-[362px] h-[50px] px-[13px] bg-transparent border border-[#E6E8EB] rounded-full flex items-center justify-between">
                                     <span className="text-black font-bold text-[16px]">2-step verification</span>
                                     <div
@@ -2179,7 +2042,6 @@ const AccountSettings = () => {
                                                 }
                                                 setIsTwoStepEnabled(newState);
                                             } catch (err) {
-                                                console.error('Failed to toggle 2FA:', err);
                                                 showToast('Failed to update 2-step verification.', 'error');
                                             }
                                         }}
@@ -2188,9 +2050,7 @@ const AccountSettings = () => {
                                     </div>
                                 </div>
 
-                                {/* Method Selection: Side-by-side */}
                                 <div className="mt-[25px] flex gap-[9px] w-[393px] -ml-[15.5px] pl-[35px] items-center">
-                                    {/* Text Message Container */}
                                     <div
                                         className={`w-[162px] h-[82px] p-[12px] bg-white border ${selectedMethod === 'sms' ? 'border-[#5260FE]' : 'border-[#E6E8EB]'} rounded-[12px] flex flex-col justify-between relative cursor-pointer`}
                                         onClick={() => {
@@ -2204,7 +2064,6 @@ const AccountSettings = () => {
                                         <span className="text-black font-bold text-[14px]">Text message</span>
                                     </div>
 
-                                    {/* Authenticator App Container */}
                                     <div
                                         className={`w-[162px] h-[82px] p-[12px] bg-white border ${selectedMethod === 'auth' ? 'border-[#5260FE]' : 'border-[#E6E8EB]'} rounded-[12px] flex flex-col justify-between relative cursor-pointer`}
                                         onClick={() => {
@@ -2223,7 +2082,6 @@ const AccountSettings = () => {
                                     </div>
                                 </div>
 
-                                {/* Backup Codes Row */}
                                 <div
                                     className="mt-[35px] flex items-center justify-between cursor-pointer active:bg-gray-50 transition-colors"
                                     onClick={async () => {
@@ -2238,7 +2096,6 @@ const AccountSettings = () => {
                                                 setSecurityStep("two_step_backup_codes");
                                             }
                                         } catch (err) {
-                                            console.error('Failed to get backup codes:', err);
                                             showToast('Failed to load backup codes.', 'error');
                                         }
                                     }}
@@ -2262,7 +2119,6 @@ const AccountSettings = () => {
                     <div className="w-full flex flex-col items-start px-0">
                         {privacyStep === "list" ? (
                             <>
-                                {/* Icon and Title Row: 19px below slider menu */}
                                 <div className="mt-[19px] flex items-center shrink-0">
                                     <img src={privacyDataIcon} alt="Privacy" className="w-[24px] h-[24px]" />
                                     <h2 className="ml-[12px] text-black font-bold text-[22px] leading-tight text-left">
@@ -2270,14 +2126,11 @@ const AccountSettings = () => {
                                     </h2>
                                 </div>
 
-                                {/* Legal Section: 18px below */}
                                 <h2 className="mt-[18px] text-black font-bold text-[22px] leading-tight text-left shrink-0">
                                     Legal
                                 </h2>
 
-                                {/* Privacy Rows: 19px below heading */}
                                 <div className="mt-[19px] w-full flex flex-col gap-[22px] shrink-0">
-                                    {/* Privacy Centre */}
                                     <div 
                                         className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
                                         onClick={() => setPrivacyStep("policy")}
@@ -2291,7 +2144,6 @@ const AccountSettings = () => {
                                         <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] mr-[2px]" />
                                     </div>
 
-                                    {/* Terms & Conditions */}
                                     <div 
                                         className="w-full flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform"
                                         onClick={() => setPrivacyStep("terms")}
@@ -2306,20 +2158,16 @@ const AccountSettings = () => {
                                     </div>
                                 </div>
 
-                                {/* Divider: 26px below */}
                                 <div className="mt-[26px] w-[362px] h-[1px] bg-[#E9EAEB] shrink-0" />
 
-                                {/* Documents & Data uploaded Section: 12px below divider */}
                                 <div className="mt-[12px] w-full flex flex-col items-start px-0 shrink-0">
                                     <h2 className="text-black font-bold text-[22px] leading-tight text-left">Documents & Data uploaded</h2>
                                     <p className="mt-[6px] text-black font-medium text-[15px] leading-tight text-left">
                                         Documents uploaded by you for your KYC. You can update them once it expires or if you are needed to re-do the KYC procedure again.
                                     </p>
                                 </div>
-                                {/* Data Container: 24px below description */}
                                 <div className="mt-[24px] w-[362px] h-auto p-[16px] rounded-[12px] border border-[#E6E8EB] flex flex-col gap-[16px] mb-8 shrink-0">
-                                    {/* Dynamic Document row */}
-                                    {kycDoc && ( // Conditionally render if kycDoc data is available
+                                    {kycDoc && (
                                         <div className="w-full flex items-center justify-between">
                                             <div className="flex flex-col items-start text-left">
                                                 <span className="text-black font-medium text-[14px] leading-tight text-left">
@@ -2338,16 +2186,14 @@ const AccountSettings = () => {
                             </>
                         ) : (
                             <div className="w-full flex flex-col items-start">
-                                {/* Subtext */}
                                 <p className="mt-[20px] text-black font-medium text-[14px] leading-tight font-satoshi">
                                     You’re all set — let’s make money moves.
                                 </p>
 
-                                {/* Scrollable Content Container */}
                                 <div className="mt-[20px] w-[362px] h-[600px] rounded-[22px] border border-[#E9EAEB] overflow-y-auto no-scrollbar flex flex-col items-start p-[16px]">
                                     {isLegalLoading ? (
                                         <div className="w-full flex flex-col items-center justify-center py-20 gap-4">
-                                            <div className="w-8 h-8 border-4 border-[#5260FE]/20 border-t-[#5260FE] rounded-full animate-spin" />
+                                            <LoadingSpinner />
                                             <span className="text-black/50 text-[13px] font-medium">Fetching legal details...</span>
                                         </div>
                                     ) : (
