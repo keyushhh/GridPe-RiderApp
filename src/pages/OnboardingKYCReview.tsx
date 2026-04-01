@@ -50,6 +50,7 @@ const OnboardingKYCReview = () => {
         // Extract all propagated state
         const { 
             selected_zone_id,
+            selected_zone_name,
             selected_hub_id,
             vehicle_model, 
             vehicle_number,
@@ -63,7 +64,8 @@ const OnboardingKYCReview = () => {
             vehicle_model,
             vehicle_number,
             zone_id: selected_zone_id,
-            hub_id: selected_hub_id
+            hub_id: selected_hub_id,
+            city: selected_zone_name
         });
 
         try {
@@ -100,6 +102,8 @@ const OnboardingKYCReview = () => {
                     vehicle_number: vehicle_number,
                     zone_id: selected_zone_id,
                     hub_id: selected_hub_id,
+                    selected_city: selected_zone_name,
+                    work_city: selected_zone_name,
                     kyc_status: 'in_review',
                     kyc_type: mapDocType(documentType),
                     kyc_dob: dob ? format(new Date(dob), "yyyy-MM-dd") : null,

@@ -41,7 +41,8 @@ const Home = () => {
     const [showOrderModal, setShowOrderModal] = useState(false);
     const [pendingOrder, setPendingOrder] = useState<any>(null);
     const [activeOrder, setActiveOrder] = useState<any>(null);
-    const [customerInfo, setCustomerInfo] = useState<{name: string, phone: string} | null>(null);
+    const [customerName, setCustomerName] = useState<string>("");
+    const [customerPhone, setCustomerPhone] = useState<string>("");
     const [hasActiveOrder, setHasActiveOrder] = useState(false);
     const [showCancelledModal, setShowCancelledModal] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -50,6 +51,9 @@ const Home = () => {
     const [verifiedUuid, setVerifiedUuid] = useState<string | null>(null);
     const [verifiedHubId, setVerifiedHubId] = useState<string | null>(null);
     const [verifiedZoneId, setVerifiedZoneId] = useState<string | null>(null);
+    const [riderCity, setRiderCity] = useState<string | null>(null);
+    const [deliveryAddress, setDeliveryAddress] = useState<string>("Fetching address...");
+    const [mapsUrl, setMapsUrl] = useState<string>("");
 
     const [showPickUpModal, setShowPickUpModal] = useState(false);
     const [showOTPModal, setShowOTPModal] = useState(false);
@@ -80,29 +84,37 @@ const Home = () => {
     const lastUpdateTimeRef = useRef<number>(0);
     const watchIdRef = useRef<number | null>(null);
 
-    // Fetch Verified UUID for subscription and queries
+    // Fetch Verified UUID, Hub, and City for subscription and queries
     useEffect(() => {
         const verify = async () => {
             if (!riderId) return;
             try {
                 const { data } = await supabase
                     .from('riders')
-                    .select('id, hub_id, zone_id')
+                    .select('id, hub_id, zone_id, work_city, selected_city, selected_hub')
                     .eq('rider_id', riderId)
                     .single();
                 
                 if (data?.id) {
                     setVerifiedUuid(data.id);
                     setVerifiedHubId(data.hub_id);
-                    setVerifiedZoneId(data.zone_id); // though verifiedHubId is primary for filtering
+                    setVerifiedZoneId(data.zone_id);
+                    
+                    // City priority: work_city first, then selected_city
+                    const city = data.work_city || data.selected_city || null;
+                    setRiderCity(city);
+                    
                     console.log('Verified Rider Data:', { 
                         uuid: data.id, 
                         hub_id: data.hub_id, 
-                        zone_id: data.zone_id 
+                        zone_id: data.zone_id,
+                        city: city,
+                        work_city: data.work_city,
+                        selected_city: data.selected_city
                     });
                 }
             } catch (err) {
-                console.error('Error verifying rider UUID:', err);
+                console.error('Error verifying rider details:', err);
             }
         };
         verify();
@@ -127,15 +139,24 @@ const Home = () => {
             setActiveOrder(null);
             setHasActiveOrder(false);
             setOrderStatus('pickup_pending');
+            localStorage.removeItem('activeOrderId'); // Clear on cancel
             refreshProfile(); // Sync earnings/status
             console.log('Modal dismissed, returning home.');
         }, 4000);
     };
 
-    // Real-time Order Management (New Orders & Active Order Status Tracking)
+    // Debug Log: Monitor Active Order State Changes
     useEffect(() => {
-        if (!verifiedUuid || !verifiedHubId) {
-            console.log('Real-time: Missing verified IDs, waiting...');
+        console.log('[ACTIVE ORDER CHANGED]', activeOrder?.id, activeOrder?.status);
+        if (activeOrder?.id) {
+            localStorage.setItem('activeOrderId', activeOrder.id);
+        }
+    }, [activeOrder]);
+
+    // 1. General Order Management (New Orders & Status Transitions)
+    useEffect(() => {
+        if (!verifiedUuid || !riderCity) {
+            console.log('Real-time: Missing verified data, waiting...');
             return;
         }
         if (!isOnline) {
@@ -143,23 +164,20 @@ const Home = () => {
             return;
         }
 
-        console.log(`[Real-time] Initializing subscription for hub: ${verifiedHubId} and rider: ${verifiedUuid}`);
-        
-        // Use a consistent channel name for the home component
-        const channel = supabase.channel('rider-active-orders');
+        const channel = supabase.channel('rider-general-updates');
 
-        // 1. Listen for NEW pending orders in the rider's hub
+        // New pending orders in the CITY (not just hub)
         channel.on(
             'postgres_changes',
             {
                 event: 'INSERT',
                 schema: 'public',
                 table: 'orders',
-                filter: `hub_id=eq.${verifiedHubId}`
+                filter: `city=eq.${riderCity}`
             },
             (payload) => {
-                console.log('[Real-time] New order insertion detected:', payload.new.id);
-                if (payload.new.status === 'pending') {
+                console.log('[Real-time] New order in city:', payload.new.id);
+                if (payload.new.status === 'pending' && !hasActiveOrder) {
                     enrichOrderData(payload.new).then(enriched => {
                         if (enriched) {
                             setPendingOrder(enriched);
@@ -170,8 +188,7 @@ const Home = () => {
             }
         );
 
-        // 2. Listen for UPDATES to orders assigned to this rider
-        // This catches status changes like 'accepted' -> 'picked_up' -> 'delivered'
+        // Status updates for orders assigned to this rider
         channel.on(
             'postgres_changes',
             {
@@ -182,100 +199,65 @@ const Home = () => {
             },
             async (payload) => {
                 const newStatus = payload.new.status;
-                console.log(`[Real-time] Active order status update detected: ${newStatus}`);
-                
-                // CRITICAL: Immediate check for cancellation
-                if (newStatus === 'cancelled') {
-                    console.log('[Real-time] ALERT: ACTIVE ORDER CANCELLED BY CUSTOMER');
-                    handleOrderCancelled();
-                    return;
-                }
-
-                // Re-fetch with joins because Realtime payload is just a raw row
-                const { data: refreshed } = await supabase
-                    .from('orders')
-                    .select(`
-                        *,
-                        zone:zone_id (name, description),
-                        destination:address_id (full_address, latitude, longitude),
-                        customer:user_id (full_name, phone_number)
-                    `)
-                    .eq('id', payload.new.id)
-                    .maybeSingle();
-                
-                if (refreshed) {
-                    const enriched = await enrichOrderData(refreshed);
-                    if (enriched) {
-                        setActiveOrder(enriched);
-                        setHasActiveOrder(true);
-                        
-                        // Handle transition states
-                        if (newStatus === 'picked_up') {
-                            setOrderStatus('picked_up');
-                        } else if (newStatus === 'delivered') {
-                            setHasActiveOrder(false);
-                            setActiveOrder(null);
-                            refreshProfile();
-                            navigate("/order-delivered");
-                        }
-                    }
+                if (newStatus === 'picked_up') {
+                    setOrderStatus('picked_up');
+                } else if (newStatus === 'delivered') {
+                    setHasActiveOrder(false);
+                    setActiveOrder(null);
+                    localStorage.removeItem('activeOrderId');
+                    navigate("/order-delivered");
                 }
             }
-        );
+        ).subscribe();
 
-        // 3. Fallback/Direct Status Tracking for Active Order
-        // Using joins for hubs and profiles to get immediate data
-        if (activeOrder?.id) {
-            const orderId = activeOrder.id;
-            console.log(`[Real-time] Adding dedicated ID listener for: ${orderId}`);
-            channel.on(
-                'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'orders',
-                    filter: `id=eq.${orderId}`
-                },
-                async (payload) => {
-                    console.log(`[Real-time] ID-specific update for ${orderId}: ${payload.new.status}`);
-                    if (payload.new.status === 'cancelled') {
-                        handleOrderCancelled();
-                        return;
-                    }
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [verifiedUuid, verifiedHubId, isOnline, hasActiveOrder]);
 
-                    // Re-fetch with joins to ensure we have all details
-                    const { data: refreshed } = await supabase
-                        .from('orders')
-                        .select(`
-                            *,
-                            zone:zone_id (name, description),
-                            destination:address_id (full_address, latitude, longitude),
-                            customer:user_id (full_name, phone_number)
-                        `)
-                        .eq('id', orderId)
-                        .maybeSingle();
-                    
-                    if (refreshed) {
-                        const enriched = await enrichOrderData(refreshed);
-                        if (enriched) {
-                            setActiveOrder(enriched);
-                            setHasActiveOrder(true);
-                            setOrderStatus(enriched.status === 'picked_up' ? 'picked_up' : 'pickup_pending');
-                        }
-                    }
-                }
-            );
+    // 2. Dedicated Order Cancellation Listener
+    useEffect(() => {
+        const orderId = activeOrder?.id || localStorage.getItem('activeOrderId');
+        
+        console.log('[CANCEL EFFECT RUNNING] orderId:', orderId);
+        
+        if (!orderId) {
+            console.log('[CANCEL EFFECT] No active order ID, skipping subscription');
+            return;
         }
 
-        channel.subscribe((status) => {
-            console.log(`[Real-time] Subscription status for ${activeOrder?.id || 'hub'}:`, status);
+        const channelName = `cancel-watch-${orderId}-${Date.now()}`;
+        const channel = supabase.channel(channelName);
+
+        channel.on(
+            'postgres_changes',
+            {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'orders',
+                filter: `id=eq.${orderId}`
+            },
+            (payload) => {
+                console.log('[REALTIME] Received status update:', payload.new.status);
+                if (payload.new.status === 'cancelled') {
+                    handleOrderCancelled();
+                }
+            }
+        ).subscribe((status) => {
+            console.log(`[REALTIME] Subscription status for ${orderId}:`, status);
+            if (status === 'SUBSCRIBED') {
+                const checkStatus = async () => {
+                    const { data } = await supabase.from('orders').select('status').eq('id', orderId).maybeSingle();
+                    if (data?.status === 'cancelled') handleOrderCancelled();
+                };
+                checkStatus();
+            }
         });
 
         return () => {
-            console.log('[Real-time] Cleaning up home subscriptions...');
             supabase.removeChannel(channel);
         };
-    }, [verifiedUuid, verifiedHubId, isOnline, activeOrder?.id]);
+    }, [activeOrder?.id]);
 
     // Debug trigger for testing the cancellation modal
     useEffect(() => {
@@ -304,36 +286,60 @@ const Home = () => {
         let enriched = { ...order };
         
         // 0. Financials & Distance (Priority mapping)
-        // Map rider_commission or amount if rider_earnings is 0 as per user request
-        const baseEarnings = Number(order.rider_commission || order.amount || 0);
-        enriched.rider_earnings = baseEarnings > 0 ? baseEarnings : Number(order.rider_earnings || 0);
+        // Ensure rider_earnings is prioritized and read from the correct field as a number
+        const baseEarnings = Number(order.rider_earnings || order.rider_commission || order.amount || 0);
+        enriched.rider_earnings = baseEarnings;
         enriched.delivery_tip = Number(order.delivery_tip || 0);
         enriched.total_potential = enriched.rider_earnings + enriched.delivery_tip;
         enriched.distance = Number(order.distance_km || order.distance || 2.1);
         
-        // 1. Pickup Details (Prioritize joined 'zone' info from service_zones)
-        if (order.zone) {
-            enriched.pickup_name = order.zone.name;
-            enriched.pickup_address = order.zone.description;
-        } else if (order.pickup_location) {
-            // Fallback for missing joins or string-based pickup labels
-            enriched.pickup_name = order.pickup_location;
-        }
+        // 1. Pickup Details (Multi-level Hub Fallback)
+        if (!order.pickup_location) {
+            let hubId = order.hub_id;
+            
+            // If order.hub_id is missing, fallback to rider's own hub_id
+            if (!hubId && riderId) {
+                try {
+                    const { data: rider } = await supabase
+                        .from('riders')
+                        .select('hub_id')
+                        .eq('rider_id', riderId)
+                        .single();
+                    if (rider) hubId = rider.hub_id;
+                } catch (err) {
+                    console.error('Error fetching rider hub fallback:', err);
+                }
+            }
 
-        // 2. Customer Info (Joined data from profiles/users)
-        if (order.customer) {
-            setCustomerInfo({
-                name: order.customer.full_name || "Customer",
-                phone: order.customer.phone_number || ""
-            });
+            if (hubId) {
+                try {
+                    const { data: hub } = await supabase
+                        .from('hubs')
+                        .select('location_name, city')
+                        .eq('id', hubId)
+                        .single();
+                    
+                    if (hub) {
+                        enriched.pickup_location = `${hub.location_name}, ${hub.city}`;
+                    } else {
+                        enriched.pickup_location = 'Contact support for pickup location';
+                    }
+                } catch (err) {
+                    console.error('Error fetching hub for pickup fallback:', err);
+                    enriched.pickup_location = 'Contact support for pickup location';
+                }
+            } else {
+                enriched.pickup_location = 'Contact support for pickup location';
+            }
         }
+        
+        // Ensure pickup_name is updated for display logic
+        enriched.pickup_name = enriched.pickup_location || "Pick Up Hub";
 
-        // 3. Delivery Details (Joined from 'destination' / addresses table)
-        if (order.destination?.full_address) {
-            enriched.delivery_address = order.destination.full_address;
-        } else if (order.delivery_address_text) {
-            enriched.delivery_address = order.delivery_address_text;
-        }
+        // 2. Customer Info (Join not used here, handled via status-based useEffect)
+        
+        // 3. Delivery Details
+        enriched.delivery_address = order.delivery_address_text || order.meta_data?.delivery_address || "Address not available";
         
         return enriched;
     };
@@ -386,10 +392,11 @@ const Home = () => {
                     const { data, error } = await supabase
                         .from('orders')
                         .select(`
-                            *,
-                            zone:zone_id (name, description),
-                            destination:address_id (full_address, latitude, longitude),
-                            customer:user_id (full_name, phone_number)
+                            id, user_id, address_id, status, rider_earnings, delivery_tip,
+                            delivery_fee, pickup_location, delivery_address_text,
+                            customer_phone_number, otp_code, delivery_location,
+                            created_at, accepted_at, picked_up_at, city, zone_id,
+                            hub_id, meta_data
                         `)
                         .eq('rider_id', riderData.id)
                         .in('status', ['accepted', 'assigned', 'picked_up', 'on_the_way'])
@@ -400,6 +407,8 @@ const Home = () => {
                         const enriched = await enrichOrderData(data);
                         if (enriched) {
                             setActiveOrder(enriched);
+                            localStorage.setItem('activeOrderId', enriched.id);
+                            console.log('FULL ACTIVE ORDER DATA:', JSON.stringify(enriched, null, 2));
                             setHasActiveOrder(true);
                             setOrderStatus(enriched.status === 'picked_up' || enriched.status === 'on_the_way' ? 'picked_up' : 'pickup_pending');
                         }
@@ -423,6 +432,74 @@ const Home = () => {
 
         fetchInitialActiveOrder();
     }, [riderId]);
+
+    // Unified Fetch for Customer Details and Delivery Address when 'picked_up'
+    useEffect(() => {
+        if (!activeOrder?.user_id || activeOrder.status !== 'picked_up') {
+            setCustomerName("");
+            setCustomerPhone("");
+            setDeliveryAddress("Fetching address...");
+            setMapsUrl("");
+            return;
+        }
+
+        const fetchDetails = async () => {
+            try {
+                // 1. Fetch customer name and phone
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('name, phone')
+                    .eq('id', activeOrder.user_id)
+                    .single();
+                
+                if (profile) {
+                    setCustomerName(profile.name || 'Customer');
+                    setCustomerPhone(activeOrder.customer_phone_number || profile.phone || 'Not available');
+                }
+                
+                // 2. Fetch delivery address (with guard)
+                let resolvedAddress = 'Address not available';
+
+                if (!activeOrder?.address_id) {
+                    console.log('No address_id in order, using fallback');
+                    resolvedAddress = activeOrder?.delivery_address_text 
+                        || activeOrder?.meta_data?.delivery_address 
+                        || 'Address not available';
+                } else {
+                    const { data: address } = await supabase
+                        .from('user_addresses')
+                        .select('address_name, address_line_1, full_address')
+                        .eq('id', activeOrder.address_id)
+                        .single();
+                    
+                    resolvedAddress = address?.full_address
+                        || address?.address_line_1
+                        || activeOrder?.delivery_address_text
+                        || activeOrder?.meta_data?.delivery_address
+                        || 'Address not available';
+                }
+                
+                setDeliveryAddress(resolvedAddress);
+                
+                // 3. Update Open in Maps query
+                setMapsUrl(
+                    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(resolvedAddress)}`
+                );
+                
+                console.log('[Details Fetch] Customer and Address resolved:', {
+                    customer: profile?.name,
+                    address: resolvedAddress
+                });
+            } catch (err) {
+                console.error('Error fetching details:', err);
+                setCustomerName("Customer");
+                setCustomerPhone(activeOrder?.customer_phone_number || "Not available");
+                setDeliveryAddress(activeOrder?.delivery_address_text || "Address not available");
+            }
+        };
+
+        fetchDetails();
+    }, [activeOrder?.user_id, activeOrder?.status, activeOrder?.address_id]);
 
     // Location Heartbeat & Watcher
     useEffect(() => {
@@ -573,20 +650,16 @@ const Home = () => {
     }, [location.state]);
 
     const handleOpenInMaps = () => {
-        if (!activeOrder?.delivery_location?.coordinates) {
-            // Fallback to text address if coordinates missing
-            const address = activeOrder?.delivery_address || activeOrder?.delivery_location || "Delivery Location";
-            const encodedAddress = encodeURIComponent(address as string);
-            window.open(`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`, '_blank');
+        if (orderStatus !== 'picked_up') {
+            // Pickup phase: Use pickup_location text directly
+            const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(activeOrder?.pickup_location || "Pick Up Hub")}`;
+            window.open(mapsUrl, '_blank');
             return;
         }
 
-        const [lng, lat] = activeOrder.delivery_location.coordinates;
-        const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-        const appleMapsUrl = `maps://maps.apple.com/?daddr=${lat},${lng}`;
-
-        // Attempt to open Google Maps, fallback handled by browser/OS
-        window.open(googleMapsUrl, '_blank');
+        // Delivery phase: Use accurately resolved deliveryAddress state
+        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(deliveryAddress)}`;
+        window.open(mapsUrl, '_blank');
     };
 
     const handleAcceptOrder = async (orderId: string) => {
@@ -604,26 +677,45 @@ const Home = () => {
             }
 
             console.log('Order accepted successfully:', data);
-            setHasActiveOrder(true);
-            setShowOrderModal(false);
             
-            // Refetch to sync state
-            handleManualRefresh();
+            // CRITICAL: Update activeOrder state with full details immediately (Bug 1 Fix)
+            if (data.order) {
+                const enriched = await enrichOrderData(data.order);
+                if (enriched) {
+                    setActiveOrder(enriched);
+                    localStorage.setItem('activeOrderId', enriched.id);
+                    setHasActiveOrder(true);
+                    setOrderStatus('pickup_pending');
+                    console.log('FULL ACTIVE ORDER DATA SET:', JSON.stringify(enriched, null, 2));
+                }
+            } else {
+                // Fallback if order object is somehow missing
+                setHasActiveOrder(true);
+                handleManualRefresh();
+            }
+
+            setShowOrderModal(false);
         } catch (err) {
             console.error('Accept order error:', err);
         }
     };
 
     const handlePickupOrder = async (selfieUrl?: string) => {
-        if (!activeOrder || !fullName) return;
+        if (!activeOrder || !riderId) return;
 
         try {
+            console.log('PICKUP ORDER REQUEST:', {
+                riderId: riderId,
+                orderId: activeOrder?.id,
+                selfieUrl: selfieUrl ? 'base64_data_present' : 'missing'
+            });
+
             // selfieUrl is passed from PickUpVerificationModal (base64)
             const { data, error } = await supabase.functions.invoke('pickup-order', {
                 body: { 
-                    riderId: fullName, 
+                    riderId: riderId, 
                     orderId: activeOrder.id,
-                    selfieBase64: selfieUrl
+                    selfieUrl: selfieUrl
                 }
             });
 
@@ -646,12 +738,15 @@ const Home = () => {
         setIsRefreshing(true);
         
         try {
-            // Fetch available orders FILTERED BY HUB ID UUID (using confirmed rider.hub_id)
+            // Fetch available orders FILTERED BY CITY
+            if (!riderCity) {
+                console.log('Refresh: No riderCity, skipping fetch');
+                return;
+            }
+
             let query = supabase.from('available_orders').select('*', { count: 'exact' });
             
-            if (verifiedHubId) {
-                query = query.eq('hub_id', verifiedHubId);
-            }
+            query = query.eq('city', riderCity);
 
             query = query.is('rider_id', null).eq('status', 'pending');
 
@@ -724,6 +819,7 @@ const Home = () => {
             // Refresh parent state
             setHasActiveOrder(false);
             setActiveOrder(null);
+            localStorage.removeItem('activeOrderId');
             refreshProfile();
         } catch (err) {
             console.error('OTP Verification error:', err);
@@ -825,8 +921,8 @@ const Home = () => {
                             </h3>
                             <p className="mt-2 text-black font-satoshi font-medium text-[14px] leading-tight">
                                 {orderStatus === 'picked_up' 
-                                    ? activeOrder?.delivery_address || activeOrder?.delivery_location || "Delivery Location pending"
-                                    : activeOrder?.pickup_name || activeOrder?.pickup_location || "Pickup Location pending"
+                                    ? deliveryAddress
+                                    : activeOrder?.pickup_location || activeOrder?.pickup_name || "Fetching location..."
                                 }
                             </p>
                             {orderStatus !== 'picked_up' && activeOrder?.pickup_address && (
@@ -847,48 +943,60 @@ const Home = () => {
                             </p>
                         </div>
 
-                        {/* Order Details Section */}
                         <div className="w-full px-[17px] mt-[24px] flex flex-col">
                             <span className="text-black/50 text-[12px] font-bold font-satoshi tracking-wider">ORDER DETAILS</span>
                             
                             <div className="mt-4 flex flex-col gap-2">
                                 <div className="flex justify-between items-center">
                                     <span className="text-black/60 text-[14px] font-medium font-satoshi">Your Earning:</span>
-                                    <span className="text-black text-[14px] font-bold font-satoshi">₹{activeOrder?.rider_earnings || 0}</span>
+                                    <span className="text-black text-[14px] font-bold font-satoshi">₹{Number(activeOrder?.rider_earnings) || 0}</span>
                                 </div>
+                                {activeOrder?.delivery_tip > 0 && (
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-black/60 text-[14px] font-medium font-satoshi">Delivery Tip:</span>
+                                        <span className="text-black text-[14px] font-bold font-satoshi">₹{activeOrder.delivery_tip}</span>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Divider */}
                             <div className="mt-6 w-full h-[1px] bg-[#E6E8EB]" />
                         </div>
 
-                        {/* Customer Details Section */}
                         <div className="w-full px-[17px] mt-6 flex flex-col">
                             <span className="text-black/50 text-[12px] font-bold font-satoshi tracking-wider">CUSTOMER DETAILS</span>
                             
                             <div className="mt-4 flex flex-col gap-2">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-black/60 text-[14px] font-medium font-satoshi">Customer Name:</span>
-                                    <span className="text-black text-[14px] font-bold font-satoshi">{customerInfo?.name || "Loading..."}</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-black/60 text-[14px] font-medium font-satoshi">Contact Number:</span>
-                                    {customerInfo?.phone ? (
-                                        <div className="flex gap-2 items-center">
-                                            <span className="text-black text-[14px] font-bold font-satoshi">
-                                                XXXXXX{customerInfo.phone.slice(-4)}
-                                            </span>
-                                            <a 
-                                                href={`tel:${customerInfo.phone}`}
-                                                className="text-[#5260FE] text-[12px] font-bold font-satoshi underline"
-                                            >
-                                                Call Now
-                                            </a>
+                                {orderStatus === 'picked_up' ? (
+                                    <>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-black/60 text-[14px] font-medium font-satoshi">Customer Name:</span>
+                                            <span className="text-black text-[14px] font-bold font-satoshi">{customerName || "Loading..."}</span>
                                         </div>
-                                    ) : (
-                                        <span className="text-black text-[14px] font-bold font-satoshi">Not available</span>
-                                    )}
-                                </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-black/60 text-[14px] font-medium font-satoshi">Contact Number:</span>
+                                            {customerPhone ? (
+                                                <div className="flex gap-2 items-center">
+                                                    <span className="text-black text-[14px] font-bold font-satoshi">
+                                                        XXXXXX{customerPhone.slice(-4)}
+                                                    </span>
+                                                    <a 
+                                                        href={`tel:${customerPhone}`}
+                                                        className="text-[#5260FE] text-[12px] font-bold font-satoshi underline"
+                                                    >
+                                                        Call Now
+                                                    </a>
+                                                </div>
+                                            ) : (
+                                                <span className="text-black text-[14px] font-bold font-satoshi">Not available</span>
+                                            )}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <p className="text-black/40 text-[14px] font-medium font-satoshi">
+                                        Customer details available after pickup
+                                    </p>
+                                )}
                             </div>
 
                             {/* Divider */}
@@ -916,8 +1024,8 @@ const Home = () => {
                                     <button 
                                         className="w-full h-[48px] rounded-full bg-white border border-[#5260FE] text-[#5260FE] font-satoshi font-medium text-[16px] transition-transform active:scale-95"
                                         onClick={() => {
-                                            if (customerInfo?.phone) {
-                                                window.location.href = `tel:+91${customerInfo.phone}`;
+                                            if (customerPhone) {
+                                                window.location.href = `tel:${customerPhone}`;
                                             }
                                         }}
                                     >
@@ -927,9 +1035,9 @@ const Home = () => {
                             ) : (
                                 <button 
                                     className={`w-full h-[48px] rounded-full text-white font-satoshi font-medium text-[16px] transition-all
-                                        ${(isAtHub && activeOrder?.pickup_name && customerInfo?.name && activeOrder?.rider_earnings) ? 'bg-[#5260FE] active:scale-95 cursor-pointer' : 'bg-[#5260FE]/50 cursor-not-allowed'}`}
+                                        ${activeOrder?.id ? 'bg-[#5260FE] active:scale-95 cursor-pointer' : 'bg-[#5260FE]/50 cursor-not-allowed'}`}
                                     onClick={() => setShowPickUpModal(true)}
-                                    disabled={!(isAtHub && activeOrder?.pickup_name && customerInfo?.name && activeOrder?.rider_earnings)}
+                                    disabled={!activeOrder?.id}
                                 >
                                     Pick Up
                                 </button>
