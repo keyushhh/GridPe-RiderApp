@@ -2854,9 +2854,9 @@ const AccountSettings = () => {
                                     <h2 className="text-black font-bold text-[18px] leading-tight">Delete Bank Account?</h2>
                                 </div>
                                 <p className="text-black font-medium text-[16px] leading-[1.3]">
-                                    {accountToDelete?.isPrimary 
+                                    {accountToDelete?.is_primary 
                                         ? "Are you sure you want to delete your Primary bank accoount? Your payouts will fail without a primary bank account."
-                                        : `Are you sure you want to delete this bank account ending with ${accountToDelete?.accountNumber || "XXXX 0960"}?`
+                                        : `Are you sure you want to delete this bank account ending with ${accountToDelete?.account_number || "XXXX 0960"}?`
                                     }
                                 </p>
                             </div>
