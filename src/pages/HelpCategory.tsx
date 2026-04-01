@@ -1,12 +1,19 @@
-import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import { helpCategories } from "../data/helpData";
 
 const HelpCategory = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { categoryId } = useParams<{ categoryId: string }>();
-    const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [expandedId, setExpandedId] = useState<string | null>(location.state?.expandedId || null);
+
+    useEffect(() => {
+        if (location.state?.expandedId) {
+            setExpandedId(location.state.expandedId);
+        }
+    }, [location.state]);
 
     const category = categoryId ? helpCategories[categoryId] : undefined;
 

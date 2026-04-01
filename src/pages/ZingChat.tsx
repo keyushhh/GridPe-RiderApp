@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ChevronLeft, PlusCircle, Send } from "lucide-react";
 import { DotLottieReact } from "@lottiefiles/dotlottie-react";
 import { useAuth } from "../hooks/useAuth";
+import { supabase } from "@/lib/supabase";
 
 // --- Assets ---
 import zingSmall from "../assets/zing-small.png";
@@ -49,7 +50,7 @@ const ZingChat = () => {
             {
                 id: '1',
                 sender: 'zing',
-                text: ["Greetings. I am Zing.", "How may I assist you with your Grid.Pe services today?"],
+                text: ["Hello, I’m Zing.", "How can I assist you with your work today?"],
                 timestamp: sessionStartTime.current,
                 type: 'actions',
                 actions: ["Order Status", "Payment Issues", "Connect with Human Agent"]
@@ -79,12 +80,13 @@ const ZingChat = () => {
         };
 
         setMessages(prev => [...prev, userMsg]);
+        const input = text;
         setInputValue("");
 
         if (text === "Connect with Human Agent") {
             handleHumanAgentRequest();
         } else {
-            simulateBotReply(text || "Sent an image");
+            fetchZingReply(input || "Sent an image", !!image);
         }
     };
 
@@ -117,25 +119,31 @@ const ZingChat = () => {
         }, 1500);
     };
 
-    const simulateBotReply = (input: string) => {
+    const fetchZingReply = async (input: string, hasImage: boolean = false) => {
         setIsThinking(true);
-        setTimeout(() => {
-            setIsThinking(false);
-            const lowerInput = input.toLowerCase();
-            let replyText = "I have received your inquiry. A support representative will review this if automated assistance is insufficient.";
-            
-            if (lowerInput.includes('order')) replyText = "I can help with that. Please provide your Order ID so I can check the status for you.";
-            if (lowerInput.includes('payment') || lowerInput.includes('wallet')) replyText = "For payment related queries, you can check your Wallet history or let me know if there's a specific transaction issue.";
+        try {
+            const { data, error } = await supabase.functions.invoke("rider-zing-ai", { 
+                body: { message: input, hasImage } 
+            });
+
+            if (error) throw error;
 
             const zingReply: Message = {
                 id: Date.now().toString(),
                 sender: 'zing',
-                text: [replyText],
+                text: [data.reply],
                 timestamp: formatTime(),
                 type: 'text'
             };
             setMessages(prev => [...prev, zingReply]);
-        }, 1200);
+        } catch (error) {
+            console.error('Zing AI Error:', error);
+            setMessages(prev => [...prev, {
+                id: 'err', sender: 'zing', text: ["Service unavailable. Please check your connection."], timestamp: formatTime()
+            }]);
+        } finally {
+            setIsThinking(false);
+        }
     };
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

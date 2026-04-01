@@ -45,6 +45,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../context/ToastContext";
 import { getBankLogo } from "../utils/BankLogoMap";
 import { supabase } from "../lib/supabase";
+import * as helpData from "../data/helpData";
 import corbado from '@corbado/web-js';
 import { CorbadoConnectAppend } from '@corbado/connect-react';
 
@@ -181,6 +182,9 @@ const AccountSettings = () => {
     const [connectToken, setConnectToken] = useState<string | null>(null);
     const [passkeyCreated, setPasskeyCreated] = useState(false);
     const [activeTab, setActiveTab] = useState(location.state?.activeTab || "Home");
+    const [searchTerm, setSearchTerm] = useState("");
+    const [searchResults, setSearchResults] = useState<{ categoryId: string; faq: any }[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
     const [loginDevices, setLoginDevices] = useState<{ id: string, device_name: string, location: string, last_login_at: string, is_current: boolean }[]>([]);
     const [isLoadingSessions, setIsLoadingSessions] = useState(false);
     const [kycDoc, setKycDoc] = useState({ type: 'aadhar', label: 'Aadhar Card', number: 'XXXX 4242' });
@@ -218,6 +222,117 @@ const AccountSettings = () => {
     const [legalContent, setLegalContent] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<string>("02 August, 2025"); // Fallback
     const [isLegalLoading, setIsLegalLoading] = useState(false);
+    const [ongoingHelp, setOngoingHelp] = useState<any>(null);
+    const [isLoadingSupport, setIsLoadingSupport] = useState(false);
+
+    // Fetch Ongoing Help (Most Recent In Progress Ticket)
+    const fetchOngoingHelp = useCallback(async () => {
+        if (!riderUuid) return;
+        setIsLoadingSupport(true);
+        try {
+            const { data: ticket, error: ticketError } = await supabase
+                .from('support_tickets')
+                .select('*')
+                .eq('rider_id', riderUuid)
+                .eq('status', 'In Progress')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (ticketError) throw ticketError;
+
+            if (ticket) {
+                // Fetch the latest step
+                const { data: steps, error: stepError } = await supabase
+                    .from('support_ticket_steps')
+                    .select('*')
+                    .eq('ticket_id', ticket.id)
+                    .order('created_at', { ascending: false });
+
+                if (stepError) throw stepError;
+
+                setOngoingHelp({
+                    ...ticket,
+                    steps: steps || []
+                });
+            } else {
+                setOngoingHelp(null);
+            }
+        } catch (err) {
+            console.error('Error fetching ongoing help:', err);
+        } finally {
+            setIsLoadingSupport(false);
+        }
+    }, [riderUuid]);
+
+    useEffect(() => {
+        if (activeTab === "Help & Support") {
+            fetchOngoingHelp();
+        }
+    }, [activeTab, fetchOngoingHelp]);
+
+    // Handle Search
+    useEffect(() => {
+        if (!searchTerm.trim()) {
+            setSearchResults([]);
+            return;
+        }
+
+        const lowerTerm = searchTerm.toLowerCase();
+        const results: { categoryId: string; faq: any }[] = [];
+
+        Object.values(helpData.helpCategories).forEach(category => {
+            category.faqs.forEach(faq => {
+                if (faq.question.toLowerCase().includes(lowerTerm) || faq.answer.toLowerCase().includes(lowerTerm)) {
+                    results.push({ categoryId: category.id, faq });
+                }
+            });
+        });
+
+        setSearchResults(results.slice(0, 5)); // Limit to top 5 results
+    }, [searchTerm]);
+
+    const handleRaiseTicket = async () => {
+        if (!riderUuid) return;
+        setIsLoadingSupport(true);
+        try {
+            const ticketId = `GRDPE-RDR-${Math.floor(1000 + Math.random() * 9000)}`;
+            const { data: ticket, error: ticketError } = await supabase
+                .from('support_tickets')
+                .insert({
+                    id: ticketId,
+                    rider_id: riderUuid,
+                    title: "General Support Request",
+                    category: "General",
+                    status: "In Progress"
+                })
+                .select()
+                .single();
+
+            if (ticketError) throw ticketError;
+
+            // Initial Step
+            const { error: stepError } = await supabase
+                .from('support_ticket_steps')
+                .insert({
+                    ticket_id: ticketId,
+                    label: "Ticket Created",
+                    status: "completed",
+                    description: "Your support request has been registered and is being assigned to an agent.",
+                    created_at: new Date().toISOString()
+                });
+
+            if (stepError) throw stepError;
+
+            showToast("New support ticket raised successfully!", "success");
+            fetchOngoingHelp(); // Refresh the card
+        } catch (err) {
+            console.error('Error raising ticket:', err);
+            showToast("Failed to raise ticket. Please try again.", "error");
+        } finally {
+            setIsLoadingSupport(false);
+        }
+    };
 
     useEffect(() => {
         if (activeTab === "Personal Info" || activeTab === "Security" || activeTab === "Home") {
@@ -2276,54 +2391,110 @@ const AccountSettings = () => {
                         </div>
 
                         {/* Search Bar */}
-                        <div className="mt-[18px] w-full h-[44px] px-[16px] rounded-full border border-[#E6E8EB] flex items-center gap-[12px] bg-white ring-offset-0 transition-colors">
-                            <img src={searchIcon} alt="Search" className="w-[18px] h-[18px]" />
-                            <input
-                                type="text"
-                                placeholder="Example: “Change primary bank”"
-                                className="flex-1 bg-transparent border-none outline-none text-black font-normal text-[14px] placeholder:text-black/70 font-satoshi"
-                            />
+                        <div className="mt-[18px] w-full relative z-[100]">
+                            <div className="w-full h-[44px] px-[16px] rounded-full border border-[#E6E8EB] flex items-center gap-[12px] bg-white ring-offset-0 transition-colors">
+                                <img src={searchIcon} alt="Search" className="w-[18px] h-[18px]" />
+                                <input
+                                    type="text"
+                                    placeholder="Example: “Change primary bank”"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="flex-1 bg-transparent border-none outline-none text-black font-normal text-[14px] placeholder:text-black/70 font-satoshi"
+                                />
+                                {searchTerm && (
+                                    <button onClick={() => setSearchTerm("")} className="text-black/40 text-[12px] font-bold">Clear</button>
+                                )}
+                            </div>
+
+                            {/* Suggested FAQs Dropdown */}
+                            {searchResults.length > 0 && (
+                                <div className="absolute top-[50px] left-0 w-full bg-white border border-[#E9EAEB] rounded-[16px] shadow-xl overflow-hidden py-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="px-4 py-2 border-b border-[#F7F8FA]">
+                                        <span className="text-[11px] font-bold text-black/40 uppercase tracking-wider">Suggested FAQs</span>
+                                    </div>
+                                    {searchResults.map((res, i) => (
+                                        <button
+                                            key={i}
+                                            onClick={() => {
+                                                navigate(`/help/${res.categoryId}`, { state: { expandedId: res.faq.id } });
+                                                setSearchTerm("");
+                                            }}
+                                            className="w-full px-4 py-3 text-left hover:bg-[#F7F8FA] flex flex-col gap-1 transition-colors border-b border-[#F7F8FA] last:border-none"
+                                        >
+                                            <span className="text-[14px] font-medium text-black line-clamp-1">{res.faq.question}</span>
+                                            <span className="text-[12px] text-black/50 line-clamp-1">{res.faq.answer}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                         {/* Ongoing Help & Support Requests */}
                         {(() => {
-                            const hasOngoingHelp = ongoingSupport && ongoingSupport.status !== 'Resolved';
+                            const ongoing = ongoingHelp;
 
                             return (
                                 <div className="w-full flex flex-col items-start translate-y-[-2px]">
-                                    {hasOngoingHelp && (
+                                    {ongoing ? (
                                         <div className="mt-[18px] w-full flex flex-col items-start">
                                             <span className="text-black/60 font-medium text-[14px] uppercase font-satoshi">Ongoing Help</span>
                                             <div className="flex flex-col gap-[12px] w-full mt-[12px]">
                                                 {/* Ongoing Ticket Card */}
-                                                <div
+                                                <div 
                                                     onClick={() => {
-                                                        setSelectedTicket({
-                                                            id: ongoingSupport.id,
-                                                            title: ongoingSupport.title,
-                                                            amount: ongoingSupport.amount
-                                                        });
+                                                        setSelectedTicket(ongoing);
+                                                        setSupportStatusSteps(ongoing.steps || []);
                                                         setIsSupportStatusOpen(true);
                                                     }}
-                                                    className="w-[362px] h-[72px] px-[14px] rounded-[13px] border border-[#E9EAEB] bg-white flex items-center justify-between relative transition-all duration-300 cursor-pointer active:scale-[0.98] animate-in fade-in slide-in-from-top-2 duration-500"
+                                                    className="w-full h-auto p-[14px] rounded-[13px] border border-[#E9EAEB] bg-white flex items-start gap-[12px] relative shrink-0 cursor-pointer active:scale-[0.98] transition-transform"
                                                 >
-                                                    <div className="flex items-center gap-[12px]">
-                                                        <img src={errorIcon} alt="Status" className="w-[24px] h-[24px]" />
-                                                        <div className="flex flex-col items-start text-left">
-                                                            <span className="text-black font-medium text-[16px] font-satoshi">{ongoingSupport.title}</span>
-                                                            <span className="mt-[6px] text-black/60 font-medium text-[12px] font-satoshi">Ticket ID: {ongoingSupport.id}</span>
+                                                    {/* Status Badge */}
+                                                    <div className="absolute top-[14px] right-[14px] px-[8px] py-[4px] rounded-[4px] bg-[#EAEDFF] flex items-center justify-center">
+                                                        <span className="text-[#5260FE] text-[12px] font-medium uppercase tracking-tight">In Progress</span>
+                                                    </div>
+
+                                                    <div className="w-[24px] h-[24px] flex items-center justify-center mt-[1px]">
+                                                        <img src={helpCircleIcon} alt="Help" className="w-[24px] h-[24px]" />
+                                                    </div>
+
+                                                    <div className="flex flex-col pr-[60px]">
+                                                        <h3 className="text-black font-medium text-[16px] font-satoshi leading-tight">
+                                                            {ongoing.title} {ongoing.amount ? `(${ongoing.amount})` : ''}
+                                                        </h3>
+                                                        <span className="mt-[6px] text-black/40 font-medium text-[12px] font-satoshi">
+                                                            {ongoing.steps?.[0]?.label || "Request Received"} • {ongoing.id}
+                                                        </span>
+                                                        <div className="mt-[8px] flex items-center gap-[4px]">
+                                                            <span className="text-[#5260FE] font-bold text-[12px] font-satoshi">Track Status</span>
+                                                            <img src={chevronForward} alt="Go" className="w-[14px] h-[14px] opacity-60" />
                                                         </div>
                                                     </div>
-                                                    <span className="text-black font-medium text-[16px] font-satoshi">{ongoingSupport.amount}</span>
                                                 </div>
                                             </div>
                                         </div>
+                                    ) : (
+                                        <div className="mt-[18px] w-full p-[20px] rounded-[13px] border border-dashed border-[#E9EAEB] bg-[#F7F8FA]/50 flex flex-col items-center text-center">
+                                            <img src={faqIcon} alt="No tickets" className="w-[32px] h-[32px] opacity-20 mb-3" />
+                                            <span className="text-black font-bold text-[15px]">All resolved</span>
+                                            <p className="text-black/50 text-[13px] mt-1">You have no active support requests.</p>
+                                        </div>
                                     )}
 
-                                    {/* My Support Requests */}
+                                    {/* Raise Ticket Button (Primary Action) */}
+                                    <div className="w-full mt-[18px]">
+                                        <button 
+                                            onClick={handleRaiseTicket}
+                                            disabled={isLoadingSupport}
+                                            className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[15px] flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50"
+                                        >
+                                            {isLoadingSupport ? "Processing..." : "Raise a New Ticket"}
+                                        </button>
+                                    </div>
+
+                                    {/* My Support Requests Link */}
                                     <div
                                         onClick={() => navigate('/account-settings/support-requests')}
-                                        className={`${hasOngoingHelp ? "mt-[12px]" : "mt-[18px]"} w-[362px] h-[44px] px-[20px] rounded-[12px] border border-[#E9EAEB] flex items-center justify-between bg-white cursor-pointer active:bg-[#F7F8FA] transition-all`}
+                                        className="mt-[12px] w-full h-[44px] px-[20px] rounded-[12px] border border-[#E9EAEB] flex items-center justify-between bg-white cursor-pointer active:bg-[#F7F8FA] transition-all"
                                     >
                                         <span className="text-black font-medium text-[14px] font-satoshi">My Support Requests</span>
                                         <img src={chevronForward} alt="Go" className="w-[16px] h-[16px] opacity-70" />

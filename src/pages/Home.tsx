@@ -47,6 +47,8 @@ const Home = () => {
     const [showCancelledModal, setShowCancelledModal] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);
+    const [activeShiftId, setActiveShiftId] = useState<string | null>(null);
+    const [isToggling, setIsToggling] = useState(false);
     const [securityAlert, setSecurityAlert] = useState<{show: boolean, message: string}>({show: false, message: ""});
     const [verifiedUuid, setVerifiedUuid] = useState<string | null>(null);
     const [verifiedHubId, setVerifiedHubId] = useState<string | null>(null);
@@ -119,6 +121,44 @@ const Home = () => {
         };
         verify();
     }, [riderId]);
+
+    // Shift Sync: Check for active shifts on app start
+    useEffect(() => {
+        const syncActiveShift = async () => {
+            if (!riderUuid) return;
+            
+            try {
+                console.log('Syncing active shift for rider:', riderUuid);
+                const { data, error } = await supabase
+                    .from('rider_shifts')
+                    .select('id, is_active')
+                    .eq('rider_id', riderUuid)
+                    .eq('is_active', true)
+                    .maybeSingle();
+                
+                if (data) {
+                    console.log('Found active shift in DB:', data.id);
+                    setActiveShiftId(data.id);
+                    // Ensure local state matches DB
+                    if (!isOnline) {
+                        setIsOnline(true);
+                        localStorage.setItem('rider_is_online', 'true');
+                    }
+                } else {
+                    console.log('No active shift found in DB.');
+                    // If no active shift in DB but local is online, sync to offline
+                    if (isOnline) {
+                        setIsOnline(false);
+                        localStorage.setItem('rider_is_online', 'false');
+                    }
+                }
+            } catch (err) {
+                console.error('Error syncing active shift:', err);
+            }
+        };
+        
+        syncActiveShift();
+    }, [riderUuid]);
 
     // Handle Order Cancelled by Customer
     const handleOrderCancelled = () => {
@@ -835,20 +875,90 @@ const Home = () => {
     ];
 
     const handleToggleOnline = async () => {
-        if (kycStatus !== "verified" || !riderUuid) return;
+        if (kycStatus !== "verified" || !riderUuid || isToggling) return;
         
         const nextOnline = !isOnline;
+        setIsToggling(true);
         
         try {
-            // Update Supabase immediately
-            const { error } = await supabase
-                .from('riders')
-                .update({ is_online: nextOnline })
-                .eq('id', riderUuid);
+            if (nextOnline) {
+                // 1. Shift Start: Insert new row into rider_shifts
+                const { data: newShift, error: shiftError } = await supabase
+                    .from('rider_shifts')
+                    .insert({
+                        rider_id: riderUuid,
+                        is_active: true,
+                        hub_name: selectedHubName || selectedZoneName || 'Primary'
+                    })
+                    .select('id')
+                    .single();
 
-            if (error) throw error;
+                if (shiftError) throw shiftError;
+                
+                setActiveShiftId(newShift.id);
+                console.log('New shift started:', newShift.id);
 
-            // Update local state
+                // 2. Log Interaction for Learning Layer
+                const currentHour = new Date().getHours();
+                const hubName = selectedHubName || selectedZoneName || 'Primary';
+                
+                await supabase.from('rider_interactions').insert({
+                    rider_id: riderUuid,
+                    interaction_type: 'completed',
+                    time_slot_start: currentHour,
+                    hub_name: hubName
+                });
+
+                // 3. Update riders table presence
+                const { error: riderUpdateError } = await supabase
+                    .from('riders')
+                    .update({ is_online: true })
+                    .eq('id', riderUuid);
+                
+                if (riderUpdateError) throw riderUpdateError;
+
+            } else {
+                // 1. Shift End: Update existing shift row
+                if (activeShiftId) {
+                    // Fetch shift details for duration calculation
+                    const { data: shiftData, error: fetchError } = await supabase
+                        .from('rider_shifts')
+                        .select('started_at')
+                        .eq('id', activeShiftId)
+                        .single();
+                        
+                    if (fetchError) throw fetchError;
+                    
+                    const startedAt = new Date(shiftData.started_at);
+                    const endedAt = new Date();
+                    const durationInMinutes = Math.round((endedAt.getTime() - startedAt.getTime()) / (1000 * 60));
+
+                    console.log(`Ending shift ${activeShiftId}. Duration: ${durationInMinutes} mins.`);
+
+                    const { error: updateShiftError } = await supabase
+                        .from('rider_shifts')
+                        .update({
+                            ended_at: endedAt.toISOString(),
+                            is_active: false,
+                            duration_minutes: durationInMinutes
+                        })
+                        .eq('id', activeShiftId);
+
+                    if (updateShiftError) throw updateShiftError;
+                    
+                    setActiveShiftId(null);
+                }
+                
+                // 2. Update riders table presence
+                const { error: riderUpdateError } = await supabase
+                    .from('riders')
+                    .update({ is_online: false })
+                    .eq('id', riderUuid);
+                
+                if (riderUpdateError) throw riderUpdateError;
+            }
+
+            // Update local state and persistence
             setIsOnline(nextOnline);
             localStorage.setItem("rider_is_online", nextOnline.toString());
             
@@ -857,10 +967,12 @@ const Home = () => {
                 localStorage.setItem("rider_has_been_online", "true");
             }
             
-            console.log(`Presence updated to ${nextOnline ? 'online' : 'offline'}`);
+            console.log(`Presence and Shift updated to ${nextOnline ? 'online' : 'offline'}`);
         } catch (err) {
-            console.error('Failed to update presence in Supabase:', err);
-            // Optional: Show error toast here
+            console.error('Failed to toggle shift status:', err);
+            alert("Connection error: Failed to update status. Please try again.");
+        } finally {
+            setIsToggling(false);
         }
     };
 
@@ -1061,14 +1173,19 @@ const Home = () => {
                                     onClick={handleToggleOnline}
                                 >
                                     <div 
-                                        className="w-[24px] h-[24px] rounded-full bg-white shadow-sm transition-transform duration-300" 
+                                        className="w-[24px] h-[24px] rounded-full bg-white shadow-sm transition-transform duration-300 flex items-center justify-center overflow-hidden" 
                                         style={{ transform: isOnline ? "translateX(56px)" : "translateX(0)" }}
-                                    />
+                                    >
+                                        {isToggling && (
+                                            <div className="w-3 h-3 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+                                        )}
+                                    </div>
                                     <span 
                                         className="text-[14px] font-medium absolute transition-all duration-300"
                                         style={{ 
                                             color: isOnline ? "white" : "#000000",
-                                            left: isOnline ? "12px" : "32px"
+                                            left: isOnline ? "12px" : "32px",
+                                            opacity: isToggling ? 0.3 : 1
                                         }}
                                     >
                                         {isOnline ? "online" : "offline"}
@@ -1205,7 +1322,9 @@ const Home = () => {
                                             return `${h12}:00 ${ampm}`;
                                         };
                                         
-                                        return `${formatHour(startHour)} - ${formatHour(endHour)} (${selectedHubName || selectedZoneName || 'Primary'} Hub)`;
+                                        const name = selectedHubName || selectedZoneName || 'Primary';
+                                        const displayName = name.toLowerCase().endsWith('hub') ? name : `${name} Hub`;
+                                        return `${formatHour(startHour)} - ${formatHour(endHour)} (${displayName})`;
                                     })()}
                                 </p>
                                 

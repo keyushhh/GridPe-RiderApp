@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "../lib/supabase";
+import { useAuth } from "../hooks/useAuth";
 import chevronBackward from "../assets/chevron_backward.svg";
 import cashPickupIcon from "../assets/cash-pickup.svg";
 import crossIcon from "../assets/cross.svg";
@@ -13,14 +15,46 @@ import deleteWhiteIcon from "../assets/delete.svg";
 import readIcon from "../assets/read.svg";
 
 interface Notification {
-    id: number;
+    id: string | number;
     title: string;
-    description: string;
-    time: string;
-    icon: string;
+    message: string;
+    created_at: string;
+    type: string;
+    is_read: boolean;
 }
 
-const SwipeableNotification = ({ notif, onMute, onDismiss, onRead }: { notif: Notification, onMute: (id: number) => void, onDismiss: (id: number) => void, onRead: (id: number) => void }) => {
+const getRelativeTime = (dateString: string) => {
+    const now = new Date();
+    const past = new Date(dateString);
+    const diffInSeconds = Math.floor((now.getTime() - past.getTime()) / 1000);
+
+    if (diffInSeconds < 60) return "Just Now";
+    
+    const minutes = Math.floor(diffInSeconds / 60);
+    if (minutes < 60) return `${minutes}min`;
+    
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}hr`;
+    
+    const days = Math.floor(hours / 24);
+    return `${days}d`;
+};
+
+const getNotificationIcon = (type: string) => {
+    switch (type.toLowerCase()) {
+        case 'payout': return payoutProcessedIcon;
+        case 'system': return bellIcon;
+        case 'update': return updateIcon;
+        case 'delivery': return cashPickupIcon;
+        case 'cancelled': return crossIcon;
+        case 'location_update': return pinLocationIcon;
+        case 'cash_received': return cashReceivedIcon;
+        case 'incentive': return incentiveSchemeIcon;
+        default: return bellIcon;
+    }
+};
+
+const SwipeableNotification = ({ notif, onMute, onDismiss, onRead }: { notif: Notification, onMute: (id: string | number) => void, onDismiss: (id: string | number) => void, onRead: (id: string | number) => void }) => {
     const [swipeX, setSwipeX] = useState(0);
     const [isDragging, setIsDragging] = useState(false);
     const [isActioning, setIsActioning] = useState(false);
@@ -194,8 +228,12 @@ const SwipeableNotification = ({ notif, onMute, onDismiss, onRead }: { notif: No
             >
                 {/* Icon Container (24x24) */}
                 <div className="w-[24px] h-[24px] flex-shrink-0 flex items-center justify-center">
-                    <img src={notif.icon} alt={notif.title} className="w-[24px] h-[24px] object-contain" />
+                    <img src={getNotificationIcon(notif.type)} alt={notif.title} className="w-[24px] h-[24px] object-contain" />
                 </div>
+                
+                {!notif.is_read && (
+                    <div className="absolute top-2 right-2 w-[8px] h-[8px] bg-[#5260FE] rounded-full" />
+                )}
 
                 {/* Content Area */}
                 <div className="flex-1 flex flex-col">
@@ -204,11 +242,11 @@ const SwipeableNotification = ({ notif, onMute, onDismiss, onRead }: { notif: No
                             {notif.title}
                         </h3>
                         <span className="text-black text-[14px] font-medium whitespace-nowrap ml-2" style={{ letterSpacing: '-0.43px' }}>
-                            {notif.time}
+                            {getRelativeTime(notif.created_at)}
                         </span>
                     </div>
                     <p className="mt-[8px] text-black font-medium text-[14px] leading-snug">
-                        {notif.description}
+                        {notif.message}
                     </p>
                 </div>
             </div>
@@ -218,30 +256,83 @@ const SwipeableNotification = ({ notif, onMute, onDismiss, onRead }: { notif: No
 
 const Notifications = () => {
     const navigate = useNavigate();
-    const [notifications, setNotifications] = useState<Notification[]>([
-        { id: 1, title: 'New Cash Pickup Assigned', description: 'A new pickup task has been assigned to you.', time: '3min', icon: cashPickupIcon },
-        { id: 2, title: 'Order Cancelled', description: 'The order was cancelled by the customer.', time: '3hr', icon: crossIcon },
-        { id: 3, title: 'Pickup Location Updated', description: 'The customer updated their pickup address.', time: '3hr', icon: pinLocationIcon },
-        { id: 4, title: 'Payout Processed', description: 'Your earnings for the day have been transferred.', time: '3hr', icon: payoutProcessedIcon },
-        { id: 5, title: 'Cash Amount Revised', description: 'The cash amount for this task has been updated.', time: '6hr', icon: cashReceivedIcon },
-        { id: 6, title: 'New Incentive Scheme', description: 'Earn extra bonuses on completing more deliveries today.', time: '7hr', icon: incentiveSchemeIcon },
-        { id: 7, title: 'Rider App Update', description: 'A new app version is available. Update for smoother tasks.', time: '8hr', icon: updateIcon },
-    ]);
+    const { riderUuid } = useAuth();
+    const [notifications, setNotifications] = useState<Notification[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    const handleMarkAllAsRead = () => {
-        setNotifications([]);
+    const fetchNotifications = useCallback(async () => {
+        if (!riderUuid) return;
+        
+        try {
+            const { data, error } = await supabase
+                .from('notifications')
+                .select('*')
+                .eq('rider_id', riderUuid)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            setNotifications(data || []);
+        } catch (err) {
+            console.error('Error fetching notifications:', err);
+        } finally {
+            setLoading(false);
+        }
+    }, [riderUuid]);
+
+    useEffect(() => {
+        fetchNotifications();
+    }, [fetchNotifications]);
+
+    const handleMarkAllAsRead = async () => {
+        if (!riderUuid || notifications.length === 0) return;
+        
+        try {
+            const { error } = await supabase
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('rider_id', riderUuid)
+                .eq('is_read', false);
+
+            if (error) throw error;
+            
+            setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+        } catch (err) {
+            console.error('Error marking all as read:', err);
+        }
     };
 
-    const handleMute = (id: number) => {
+    const handleMute = (id: string | number) => {
         console.log(`Muted notification ${id}`);
     };
 
-    const handleDismiss = (id: number) => {
-        setNotifications(prev => prev.filter(n => n.id !== id));
+    const handleDismiss = async (id: string | number) => {
+        try {
+            const { error } = await supabase
+                .from('notifications')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+            
+            setNotifications(prev => prev.filter(n => n.id !== id));
+        } catch (err) {
+            console.error('Error deleting notification:', err);
+        }
     };
 
-    const handleRead = (id: number) => {
-        setNotifications(prev => prev.filter(n => n.id !== id));
+    const handleRead = async (id: string | number) => {
+        try {
+            const { error } = await supabase
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('id', id);
+
+            if (error) throw error;
+            
+            setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+        } catch (err) {
+            console.error('Error marking notification as read:', err);
+        }
     };
 
     return (
@@ -288,58 +379,70 @@ const Notifications = () => {
 
                     {/* Scrollable List Area */}
                     <div className="flex-1 w-full overflow-y-auto no-scrollbar px-[16px] pb-[40px] flex flex-col">
-                        {notifications.map((notif) => (
-                            <SwipeableNotification 
-                                key={notif.id} 
-                                notif={notif} 
-                                onMute={handleMute} 
-                                onDismiss={handleDismiss} 
-                                onRead={handleRead}
-                            />
-                        ))}
+                        {loading ? (
+                            <div className="flex-1 flex items-center justify-center">
+                                <div className="w-8 h-8 border-4 border-[#5260FE] border-t-transparent rounded-full animate-spin" />
+                            </div>
+                        ) : (
+                            notifications.map((notif) => (
+                                <SwipeableNotification 
+                                    key={notif.id} 
+                                    notif={notif} 
+                                    onMute={handleMute} 
+                                    onDismiss={handleDismiss} 
+                                    onRead={handleRead}
+                                />
+                            ))
+                        )}
                     </div>
                 </div>
             ) : (
                 /* Empty State Content */
                 <div className="flex-1 w-full flex flex-col items-center justify-center -mt-[80px] px-[24px]">
-                    {/* Illustration: Stacked Cards */}
-                    <div className="relative w-[300px] h-[180px] flex justify-center items-center mb-[32px]">
-                        {/* Bottom Card */}
-                        <div className="absolute top-[0px] w-[230px] h-[75px] bg-white border border-[#F2F2F2] rounded-[16px] opacity-40 shadow-sm flex items-center px-4 gap-3">
-                            <div className="w-[42px] h-[42px] bg-[#F2F2F2] rounded-[10px] flex-shrink-0" />
-                            <div className="flex flex-col gap-2 flex-grow">
-                                <div className="h-[9px] bg-[#F2F2F2] rounded-full w-[60%]" />
-                                <div className="h-[9px] bg-[#F2F2F2] rounded-full w-[85%]" />
+                    {loading ? (
+                        <div className="w-8 h-8 border-4 border-[#5260FE] border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                        <>
+                            {/* Illustration: Stacked Cards */}
+                            <div className="relative w-[300px] h-[180px] flex justify-center items-center mb-[32px]">
+                                {/* Bottom Card */}
+                                <div className="absolute top-[0px] w-[230px] h-[75px] bg-white border border-[#F2F2F2] rounded-[16px] opacity-40 shadow-sm flex items-center px-4 gap-3">
+                                    <div className="w-[42px] h-[42px] bg-[#F2F2F2] rounded-[10px] flex-shrink-0" />
+                                    <div className="flex flex-col gap-2 flex-grow">
+                                        <div className="h-[9px] bg-[#F2F2F2] rounded-full w-[60%]" />
+                                        <div className="h-[9px] bg-[#F2F2F2] rounded-full w-[85%]" />
+                                    </div>
+                                </div>
+                                {/* Middle Card */}
+                                <div className="absolute top-[20px] w-[265px] h-[75px] bg-white border border-[#F2F2F2] rounded-[18px] opacity-70 shadow-sm flex items-center px-4 gap-3">
+                                     <div className="w-[42px] h-[42px] bg-[#F2F2F2] rounded-[10px] flex-shrink-0" />
+                                    <div className="flex flex-col gap-2 flex-grow">
+                                        <div className="h-[9px] bg-[#F2F2F2] rounded-full w-[65%]" />
+                                        <div className="h-[9px] bg-[#F2F2F2] rounded-full w-[90%]" />
+                                    </div>
+                                </div>
+                                {/* Top Card */}
+                                <div className="absolute top-[45px] w-[300px] h-[85px] bg-white border border-[#EDEDED] rounded-[22px] shadow-[0px_12px_32px_rgba(0,0,0,0.06)] z-10 flex items-center px-[18px] gap-4">
+                                    {/* Blue Icon Case */}
+                                    <div className="w-[50px] h-[50px] bg-[#5260FE] rounded-[14px] flex-shrink-0" />
+                                    
+                                    <div className="flex flex-col gap-3 flex-grow">
+                                        <div className="h-[10px] bg-[#F2F2F2] rounded-full w-[45%]" />
+                                        <div className="h-[10px] bg-[#F2F2F2] rounded-full w-[95%]" />
+                                        <div className="h-[10px] bg-[#F2F2F2] rounded-full w-[70%]" />
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                        {/* Middle Card */}
-                        <div className="absolute top-[20px] w-[265px] h-[75px] bg-white border border-[#F2F2F2] rounded-[18px] opacity-70 shadow-sm flex items-center px-4 gap-3">
-                             <div className="w-[42px] h-[42px] bg-[#F2F2F2] rounded-[10px] flex-shrink-0" />
-                            <div className="flex flex-col gap-2 flex-grow">
-                                <div className="h-[9px] bg-[#F2F2F2] rounded-full w-[65%]" />
-                                <div className="h-[9px] bg-[#F2F2F2] rounded-full w-[90%]" />
-                            </div>
-                        </div>
-                        {/* Top Card */}
-                        <div className="absolute top-[45px] w-[300px] h-[85px] bg-white border border-[#EDEDED] rounded-[22px] shadow-[0px_12px_32px_rgba(0,0,0,0.06)] z-10 flex items-center px-[18px] gap-4">
-                            {/* Blue Icon Case */}
-                            <div className="w-[50px] h-[50px] bg-[#5260FE] rounded-[14px] flex-shrink-0" />
-                            
-                            <div className="flex flex-col gap-3 flex-grow">
-                                <div className="h-[10px] bg-[#F2F2F2] rounded-full w-[45%]" />
-                                <div className="h-[10px] bg-[#F2F2F2] rounded-full w-[95%]" />
-                                <div className="h-[10px] bg-[#F2F2F2] rounded-full w-[70%]" />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Text Content */}
-                    <h2 className="text-black font-bold text-[20px] text-center mb-2">
-                        No notifications yet!
-                    </h2>
-                    <p className="text-black font-medium text-[16px] text-center opacity-60 w-[240px] leading-snug">
-                        You’ll find all your updates and alerts here.
-                    </p>
+        
+                            {/* Text Content */}
+                            <h2 className="text-black font-bold text-[20px] text-center mb-2">
+                                All caught up!
+                            </h2>
+                            <p className="text-black font-medium text-[16px] text-center opacity-60 w-[240px] leading-snug">
+                                You’ve checked all your updates. Great job!
+                            </p>
+                        </>
+                    )}
                 </div>
             )}
         </div>
