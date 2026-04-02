@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Check, ChevronLeft, X } from "lucide-react";
+import { supabase } from "../lib/supabase";
+import { useAuth } from "../hooks/useAuth";
 
 import aadharIcon from "../assets/aadhar.png";
 import panIcon from "../assets/pan.png";
@@ -11,9 +13,11 @@ import radioSelected from "../assets/radio-selected.svg";
 const OnboardingKYC = () => {
     const navigate = useNavigate();
     const location = useLocation();
+    const { riderUuid, riderId, fullName, login } = useAuth();
 
     // Default to aadhar selected initially to match other screens, or null.
     const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const documents = [
         { id: "aadhar", name: "Aadhar Card", icon: aadharIcon },
@@ -55,7 +59,7 @@ const OnboardingKYC = () => {
                 {/* Step Container */}
                 <div className="mt-[29px] w-[362px] h-[75px] rounded-[12px] bg-white border border-[#E9EAEB] relative shrink-0">
                     <span className="absolute left-[12px] top-[15px] text-[14px] font-medium text-black">
-                        Step 5/5
+                        Step 4/4
                     </span>
                     <span className="absolute right-[14px] top-[15px] text-[14px] font-medium text-black">
                         KYC
@@ -63,7 +67,7 @@ const OnboardingKYC = () => {
 
                     {/* Progress Bar */}
                     <div className="absolute left-[12px] bottom-[11px] w-[338px] h-[10px] bg-[#EBEBEB] rounded-full overflow-hidden">
-                        <div className="h-full w-5/5 bg-[#5260FE] rounded-full" />
+                        <div className="h-full w-full bg-[#5260FE] rounded-full" />
                     </div>
                 </div>
 
@@ -126,20 +130,47 @@ const OnboardingKYC = () => {
 
                 {/* Privacy Text */}
                 <p className="w-[362px] text-[#616161] text-[14px] font-medium text-left mb-[16px] leading-relaxed">
-                    This information is used for identity verification only, and will be kept secure by GridPe
+                    This information is used for identity verification only, and will be kept secure by Didit
                 </p>
 
                 {/* Continue CTA */}
                 <button
-                    onClick={() => navigate(`/onboarding/kyc-upload?doc=${selectedDoc}`, { state: { ...location.state, documentType: selectedDoc } })}
-                    disabled={!selectedDoc}
-                    className={`w-[362px] h-[48px] rounded-full flex items-center justify-center shrink-0 transition-opacity mt-auto mb-[24px] ${selectedDoc
+                    onClick={async () => {
+                        if (!selectedDoc || !riderUuid || isSubmitting) return;
+                        setIsSubmitting(true);
+                        try {
+                            const { error } = await supabase
+                                .from('riders')
+                                .update({
+                                    kyc_status: 'in_review',
+                                    kyc_type: selectedDoc
+                                })
+                                .eq('id', riderUuid);
+                                
+                            if (error) throw error;
+                            
+                            login(riderUuid, riderId || '', fullName || '', 'in_review');
+
+                            const diditUrl = `https://verify.didit.me/u/2HbisVl2RnS8ftFtVUAt5g?vendor_data=${riderUuid}`;
+                            window.location.href = diditUrl;
+                        } catch (err) {
+                            console.error('KYC update failed', err);
+                        } finally {
+                            setIsSubmitting(false);
+                        }
+                    }}
+                    disabled={!selectedDoc || isSubmitting}
+                    className={`w-[362px] h-[48px] rounded-full flex items-center justify-center shrink-0 transition-opacity mt-auto mb-[24px] ${selectedDoc && !isSubmitting
                             ? 'bg-[#5260FE] hover:opacity-90 active:scale-[0.98] cursor-pointer'
-                            : 'bg-[#AAnnnn] opacity-50 cursor-not-allowed border border-[#E9EAEB] bg-gray-200'  /* Need exact disabled color if specified, using grayscale fallback */
+                            : 'opacity-50 cursor-not-allowed border border-[#E9EAEB] bg-gray-200'
                         }`}
-                    style={{ backgroundColor: selectedDoc ? '#5260FE' : '#EBEBEB' }}
+                    style={{ backgroundColor: (selectedDoc && !isSubmitting) ? '#5260FE' : '#EBEBEB' }}
                 >
-                    <span className={`text-[16px] font-medium ${selectedDoc ? 'text-white' : 'text-[#616161]'}`}>Continue</span>
+                    {isSubmitting ? (
+                        <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                    ) : (
+                        <span className={`text-[16px] font-medium ${selectedDoc ? 'text-white' : 'text-[#616161]'}`}>Continue</span>
+                    )}
                 </button>
             </div>
         </div>

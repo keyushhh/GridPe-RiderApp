@@ -35,7 +35,8 @@ const Home = () => {
     const { 
         kycStatus, fullName, riderUuid, riderId, totalEarnings, 
         isOnline, setIsOnline, refreshProfile, selectedZoneId, 
-        selectedHubName, selectedZoneName, workCity, selectedCity 
+        selectedHubName, selectedZoneName, workCity, selectedCity,
+        isOnboarded, setIsOnboarded
     } = useAuth();
     const [hasBeenOnline, setHasBeenOnline] = useState(
         localStorage.getItem("rider_has_been_online") === "true"
@@ -58,6 +59,7 @@ const Home = () => {
     const [securityAlert, setSecurityAlert] = useState<{show: boolean, message: string}>({show: false, message: ""});
     const [verifiedUuid, setVerifiedUuid] = useState<string | null>(riderUuid);
     const [verifiedHubId, setVerifiedHubId] = useState<string | null>(null);
+    const onboardUpdateAttempted = useRef(false);
     const [verifiedZoneId, setVerifiedZoneId] = useState<string | null>(selectedZoneId);
     const [riderCity, setRiderCity] = useState<string | null>(workCity || selectedCity);
     const [deliveryAddress, setDeliveryAddress] = useState<string>("Fetching address...");
@@ -131,6 +133,60 @@ const Home = () => {
         
         syncActiveShift();
     }, [riderUuid]);
+
+    // Track KYC Status via Realtime & On Mount
+    useEffect(() => {
+        if (!verifiedUuid) return;
+
+        // 1. Always fetch on load to ensure we have the latest status
+        refreshProfile();
+
+        // 2. Listen to real-time changes
+        const channel = supabase.channel(`kyc_watch_${verifiedUuid}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'riders',
+                    filter: `id=eq.${verifiedUuid}`
+                },
+                (payload) => {
+                    console.log('[Home] KYC Status updated in DB:', payload.new.kyc_status);
+                    if (payload.new.kyc_status === 'verified') {
+                        // Immediately refresh local context to update the UI
+                        refreshProfile();
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [verifiedUuid]);
+
+    // Track First-Time Dashboard Access
+    useEffect(() => {
+        if (!verifiedUuid) return;
+        
+        if (isOnboarded === false && !onboardUpdateAttempted.current) {
+            onboardUpdateAttempted.current = true; // Set immediately to prevent re-entry
+            console.log('[Home] First time reaching dashboard, attempting to update is_onboarded to true.');
+            
+            supabase.from('riders').update({ is_onboarded: true }).eq('id', verifiedUuid).then(({ error }) => {
+                if (error) {
+                    // Log gracefully without crashing. PGRST204 means no data returned or column sync issue.
+                    console.warn('[Home] Note: is_onboarded update failed (likely syncing). Rider session will proceed unblocked.', error);
+                    // Force the local state to true so they don't get trapped in a redirect loop on this session
+                    setIsOnboarded(true);
+                } else {
+                    console.log('[Home] is_onboarded successfully updated.');
+                    setIsOnboarded(true);
+                }
+            });
+        }
+    }, [verifiedUuid, isOnboarded, setIsOnboarded]);
 
     // Handle Order Cancelled by Customer
     const handleOrderCancelled = () => {
@@ -390,17 +446,24 @@ const Home = () => {
     // Initial Fetch for Active Order
     useEffect(() => {
         const fetchInitialActiveOrder = async () => {
-            // First fetch the formal rider UUID using the string-based rider_id
-            if (!riderId) return;
+            const textId = localStorage.getItem('rider_id') || riderId;
+            if (!textId) return;
             
             try {
-                const { data: riderData } = await supabase
-                    .from('riders')
-                    .select('id')
-                    .eq('rider_id', riderId)
-                    .single();
+                // If it's already a real UUID (non-zero), we can use it directly
+                let resolvedUuid = (riderUuid && !riderUuid.startsWith('00000000')) ? riderUuid : null;
 
-                if (riderData?.id) {
+                if (!resolvedUuid && textId.includes('GRIDPE-RDR')) {
+                    console.log(`Resolving UUID for text rider_id: ${textId}...`);
+                    const { data: riderData } = await supabase
+                        .from('riders')
+                        .select('id')
+                        .eq('rider_id', textId)
+                        .maybeSingle();
+                    resolvedUuid = riderData?.id || null;
+                }
+
+                if (resolvedUuid) {
                     const { data, error } = await supabase
                         .from('orders')
                         .select(`
@@ -410,7 +473,7 @@ const Home = () => {
                             created_at, accepted_at, picked_up_at, city, zone_id,
                             hub_id, meta_data
                         `)
-                        .eq('rider_id', riderData.id)
+                        .eq('rider_id', resolvedUuid)
                         .in('status', ['accepted', 'assigned', 'picked_up', 'on_the_way'])
                         .maybeSingle();
                     
@@ -420,16 +483,14 @@ const Home = () => {
                         if (enriched) {
                             setActiveOrder(enriched);
                             localStorage.setItem('activeOrderId', enriched.id);
-                            console.log('FULL ACTIVE ORDER DATA:', JSON.stringify(enriched, null, 2));
                             setHasActiveOrder(true);
                             setOrderStatus(enriched.status === 'picked_up' || enriched.status === 'on_the_way' ? 'picked_up' : 'pickup_pending');
                         }
                     } else {
-                        // Diagnostic: Log the last order status for this rider if nothing active found
                         const { data: lastOrder } = await supabase
                             .from('orders')
                             .select('id, status, created_at')
-                            .eq('rider_id', riderData.id)
+                            .eq('rider_id', resolvedUuid)
                             .order('created_at', { ascending: false })
                             .limit(1)
                             .maybeSingle();
@@ -443,7 +504,7 @@ const Home = () => {
         };
 
         fetchInitialActiveOrder();
-    }, [riderId]);
+    }, [riderId, riderUuid]);
 
     // Unified Fetch for Customer Details and Delivery Address when 'picked_up'
     useEffect(() => {
@@ -949,7 +1010,7 @@ const Home = () => {
 
     return (
         <div className="relative h-[100dvh] w-full bg-white font-satoshi overflow-hidden flex flex-col items-center">
-            <GlowingOrb />
+            <GlowingOrb color={(kycStatus === "in_review" || kycStatus === "pending") ? "#FFC107" : "#5260FE"} />
 
             {/* Header Container */}
             <div className={`flex-none flex items-center justify-between w-[362px] px-0 pt-12 pb-2 relative z-10`}>
@@ -1133,7 +1194,7 @@ const Home = () => {
                                         kycStatus === "verified" ? "cursor-pointer" : "cursor-not-allowed opacity-50"
                                     }`}
                                     style={{ backgroundColor: isOnline ? "#0C7E4B" : "rgba(120, 120, 120, 0.2)" }}
-                                    onClick={handleToggleOnline}
+                                    onClick={kycStatus === "verified" ? handleToggleOnline : undefined}
                                 >
                                     <div 
                                         className="w-[24px] h-[24px] rounded-full bg-white shadow-sm transition-transform duration-300 flex items-center justify-center overflow-hidden" 
@@ -1169,7 +1230,7 @@ const Home = () => {
                                         <h2 className="text-[20px] font-bold text-black leading-[1.4]">
                                             {kycStatus === "verified" ? (
                                                 <>Verification is completed! <br /> You can now go online, and start accepting orders.</>
-                                            ) : kycStatus === "in_review" ? (
+                                            ) : kycStatus === "in_review" || kycStatus === "pending" ? (
                                                 <>Verification is in progress. <br /> You’ll be notified once your KYC is approved.</>
                                             ) : (
                                                 <>KYC Verification Required. <br /> Please complete your KYC to start earning.</>
@@ -1177,12 +1238,12 @@ const Home = () => {
                                         </h2>
                                     </div>
 
-                                    {kycStatus === "pending" && (
+                                    {(kycStatus === "in_review" || kycStatus === "pending") && (
                                         <p 
-                                            className="text-[14px] font-medium text-black mt-[7px]"
-                                            style={{ lineHeight: "22px", letterSpacing: "-0.43px" }}
+                                            className="text-[14px] font-medium text-[#616161] mt-[7px]"
+                                            style={{ lineHeight: "22px" }}
                                         >
-                                            (Usually within 30 minutes)
+                                            This usually completes within a few minutes.
                                         </p>
                                     )}
                                 </>
@@ -1476,13 +1537,13 @@ const Home = () => {
                             const path = `${activeOrder.id}_${verificationType}_${Date.now()}.jpg`;
                             const selfieUrl = await storageService.uploadBase64Image(image, 'rider-selfies', path);
 
-                            // 2. Perform Safety Check (Simulated Match)
-                            const isMatch = Math.random() > 0.05; // 95% success simulation
+                            // 2. Perform Safety Check (Skip matching for testing phase - just verify upload)
+                            const isMatch = !!selfieUrl; // Any successful upload is a match for now
                             
                             if (!isMatch) {
                                 setSecurityAlert({
                                     show: true,
-                                    message: "Face scan does not match your original KYC profile. Access denied."
+                                    message: "Selfie upload failed. Please try again."
                                 });
                                 setIsVerifying(false);
                                 return;

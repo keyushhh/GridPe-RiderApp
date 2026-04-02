@@ -33,20 +33,64 @@ const OnboardingHub: React.FC = () => {
             }
 
             try {
-                const { data, error } = await supabase
+                // 1. Initial Attempt: Fetch by service_zone_id (Proximity/Zone Match)
+                console.log(`Checking for hubs in zone: ${selectedZoneId}...`);
+                const { data: zoneData, error: zoneError } = await supabase
                     .from('hubs')
                     .select('id, location_name, address')
-                    .eq('zone_id', selectedZoneId);
+                    .eq('service_zone_id', selectedZoneId);
+                
+                if (zoneError) throw zoneError;
+                
+                let results = zoneData;
+                
+                // 2. Fallback: Fetch by city name (e.g. "Guwahati") if zone query is empty
+                if (!results || results.length === 0) {
+                    console.log(`No hubs in zone ${selectedZoneId}. Falling back to city: ${selectedZoneName}...`);
+                    const { data: cityData, error: cityError } = await supabase
+                        .from('hubs')
+                        .select('id, location_name, address')
+                        .eq('city', selectedZoneName);
+                    
+                    if (cityError) throw cityError;
+                    results = cityData;
+                }
 
-                if (error) throw error;
-                if (data) {
-                    const mappedHubs = data.map(h => ({
+                // 3. Hard fallback for testing: if still empty, try 'Guwahati'
+                if (!results || results.length === 0) {
+                    console.log(`City fallback empty. Trying hardcoded 'Guwahati'...`);
+                    const { data: guwahatiData, error: guwahatiError } = await supabase
+                        .from('hubs')
+                        .select('id, location_name, address')
+                        .eq('city', 'Guwahati');
+                    
+                    if (guwahatiError) throw guwahatiError;
+                    results = guwahatiData;
+                }
+
+                // 4. Last resort: fetch ALL hubs
+                if (!results || results.length === 0) {
+                    console.log('All city queries empty. Fetching ALL hubs...');
+                    const { data: allData, error: allError } = await supabase
+                        .from('hubs')
+                        .select('id, location_name, address')
+                        .limit(20);
+                    
+                    if (allError) throw allError;
+                    results = allData;
+                }
+
+                // Map results to Hub interface
+                if (results && results.length > 0) {
+                    const mappedHubs = results.map((h, index) => ({
                         id: h.id,
                         name: h.location_name,
-                        dist_meters: 1200 
+                        dist_meters: 1000 + (index * 200) 
                     }));
                     setHubs(mappedHubs);
                     if (mappedHubs.length > 0) setSelectedHub(mappedHubs[0].id);
+                } else {
+                    console.log('No hubs found after all fallback attempts.');
                 }
             } catch (err) {
                 console.error('Error fetching hubs:', err);

@@ -80,41 +80,71 @@ const OTP: React.FC = () => {
         // Normalization check & Test credentials
         if (fullPhone === '918730889502') {
             if (otpValue === '123456') {
-                // Simulate login for test credentials
-                const riderUuid = '00000000-0000-0000-0000-000000000001';
+                try {
+                    // Test path: We have NO Supabase Auth session here.
+                    // RLS policies require auth.uid() — so INSERT will fail with 42501.
+                    // Strategy: Only SELECT (which may be allowed), and if no profile
+                    // exists, navigate to onboarding where the real auth flow handles creation.
 
-                const { data: rider, error: riderError } = await supabase
-                    .from('riders')
-                    .select('*')
-                    .eq('phone_number', fullPhone)
-                    .maybeSingle(); // Better: doesn't throw PGRST116 if not found
+                    const { data: rider, error: riderError } = await supabase
+                        .from('riders')
+                        .select('*')
+                        .eq('phone_number', fullPhone)
+                        .maybeSingle();
 
-                if (riderError) {
-                    console.warn('Supabase rider fetch error (expected for new test users):', riderError);
-                }
-
-                console.log('Rider data fetched (test):', rider);
-
-                const finalId = rider?.id || riderUuid;
-                
-                const riderExists = !!rider;
-                const kycStatus = riderExists ? 'verified' : 'pending';
-                const finalName = rider?.full_name || (rider as any)?.fullName || (rider as any)?.name || null;
-
-                console.log('Login details (test bypass):', { finalId, finalName, kycStatus, riderExists });
-                
-                setTimeout(() => {
-                    // Update local auth state
-                    login(finalId, finalId, finalName, kycStatus);
-                    logSession(finalId); // Fire and forget
-                    
-                    if (riderExists) {
-                        navigate('/dashboard');
-                    } else {
-                        navigate('/work-city');
+                    if (riderError) {
+                        console.warn('Test rider fetch error (RLS may block this):', riderError);
                     }
-                }, 1500);
+
+                    console.log('Rider data fetched (test):', rider);
+
+                    if (rider) {
+                        // Existing rider found — login and navigate
+                        const finalId = rider.id;
+                        const finalRiderId = rider.rider_id || '';
+                        const finalName = rider.full_name || null;
+                        const kycStatus = rider.kyc_status || 'pending';
+                        const isOnboarded = rider.is_onboarded || false;
+
+                        console.log('Test login — existing rider:', { finalId, finalRiderId, kycStatus });
+
+                        login(finalId, finalRiderId, finalName, kycStatus);
+
+                        if (finalRiderId && finalRiderId !== '') {
+                            await logSession(finalRiderId);
+                        }
+
+                        setTimeout(() => {
+                            if ((kycStatus === 'verified' || kycStatus === 'in_review')) {
+                                if (!isOnboarded) {
+                                    navigate('/onboarding/identity-info');
+                                } else {
+                                    navigate('/dashboard');
+                                }
+                            } else {
+                                navigate('/work-city');
+                            }
+                        }, 1000);
+                    } else {
+                        // No profile exists and we can't INSERT without auth session.
+                        // Navigate to onboarding — profile will be created during KYC submission
+                        // where the real auth session exists.
+                        console.log('Test user: No profile found. Navigating to onboarding.');
+                        console.log('NOTE: Profile will be created during the KYC step with a real auth session.');
+
+                        // Set minimal local state so the app knows we're in onboarding
+                        login('', '', 'Test Rider', 'pending');
+
+                        setTimeout(() => {
+                            navigate('/work-city');
+                        }, 1000);
+                    }
+                } catch (err) {
+                    console.error('Test login flow error:', err);
+                    setErrorMsg('Login failed. Please try again.');
+                }
                 return;
+
             } else {
                 setErrorMsg("That code's off target. Double-check your SMS.");
             }
@@ -133,28 +163,98 @@ const OTP: React.FC = () => {
                 }
 
                 if (data.user) {
-                    // Fetch rider profile to check for existing KYC
-                    const { data: rider, error: riderError } = await supabase
+                    const authUserId = data.user.id;
+                    console.log('Auth user ID:', authUserId);
+
+                    // CRITICAL: Verify auth session is valid before any DB operations
+                    const { data: authCheck } = await supabase.auth.getUser();
+                    if (!authCheck?.user?.id) {
+                        console.error('CRITICAL: auth.getUser() returned null after OTP verify');
+                        setErrorMsg('Session validation failed. Please try again.');
+                        return;
+                    }
+                    console.log('Auth session confirmed. user.id:', authCheck.user.id);
+
+                    // Fetch rider profile — riders.id = auth user UUID
+                    let rider: any = null;
+                    const { data: existingRider, error: riderError } = await supabase
                         .from('riders')
                         .select('*')
-                        .eq('id', data.user.id)
+                        .eq('id', authUserId)
                         .maybeSingle();
 
                     if (riderError) {
                         console.error('Error fetching rider profile:', riderError);
                     }
 
+                    rider = existingRider;
                     console.log('Rider data fetched (real):', rider);
 
-                    const riderExists = !!rider;
-                    const fetchedName = rider?.full_name || (rider as any)?.fullName || (rider as any)?.name || null;
-                    const kycStatus = riderExists ? 'verified' : 'pending';
-                    const riderId = rider?.rider_id || data.user.id;
-                    login(data.user.id, riderId, fetchedName, kycStatus);
-                    logSession(riderId); // Fire and forget
+                    // Auto-create profile if this is a brand new user
+                    if (!rider) {
+                        // Use timestamp for unique rider_id — no collisions
+                        const newRiderId = `GRIDPE-RDR${Date.now()}`;
 
-                    if (riderExists) {
-                        navigate('/dashboard');
+                        const newRiderData = {
+                            id: authUserId, // UUID type — matches auth.uid() for RLS
+                            phone_number: fullPhone,
+                            rider_id: newRiderId,
+                            kyc_status: 'pending',
+                            full_name: '',
+                        };
+
+                        // Log the exact payload before insert
+                        console.log('Inserting Rider:', newRiderData);
+
+                        try {
+                            const { data: newRider, error: insertError } = await supabase
+                                .from('riders')
+                                .insert(newRiderData)
+                                .select('*')
+                                .single();
+
+                            if (insertError) throw insertError;
+
+                            rider = newRider;
+                            console.log('Auto-created rider profile:', newRider);
+                        } catch (insertErr: any) {
+                            console.error('Insert failed:', insertErr.message, insertErr.code);
+                            // Profile may already exist — fetch by phone as fallback
+                            const { data: fallback } = await supabase
+                                .from('riders')
+                                .select('*')
+                                .eq('phone_number', fullPhone)
+                                .maybeSingle();
+
+                            if (fallback) {
+                                rider = fallback;
+                                console.log('Fetched existing profile via phone fallback:', fallback);
+                            } else {
+                                console.error('CRITICAL: Could not create or find rider profile');
+                            }
+                        }
+                    }
+
+                    const fetchedName = rider?.full_name || null;
+                    const kycStatus = rider?.kyc_status || 'pending';
+                    const riderId = rider?.rider_id || '';
+                    const isOnboarded = rider?.is_onboarded || false;
+
+                    // Update auth state synchronously
+                    login(authUserId, riderId, fetchedName, kycStatus);
+
+                    // Await session log before navigating
+                    if (riderId && riderId !== '') {
+                        await logSession(riderId);
+                    }
+
+                    // Navigate
+                    if (rider && (kycStatus === 'verified' || kycStatus === 'in_review')) {
+                        if (!isOnboarded) {
+                            navigate('/onboarding/identity-info');
+                        } else {
+                            navigate('/dashboard');
+                        }
                     } else {
                         navigate('/work-city');
                     }

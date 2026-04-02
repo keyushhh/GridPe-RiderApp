@@ -26,7 +26,7 @@ const OnboardingGuidelines: React.FC = () => {
                 {/* Step Container */}
                 <div className="mt-[29px] w-[362px] h-[75px] rounded-[12px] bg-white border border-[#E9EAEB] relative shrink-0">
                     <span className="absolute left-[12px] top-[15px] text-[14px] font-medium text-black">
-                        Step 4/5
+                        Step 3/4
                     </span>
                     <span className="absolute right-[14px] top-[15px] text-[14px] font-medium text-black">
                         Guidelines
@@ -34,7 +34,7 @@ const OnboardingGuidelines: React.FC = () => {
 
                     {/* Progress Bar */}
                     <div className="absolute left-[12px] bottom-[11px] w-[338px] h-[10px] bg-[#EBEBEB] rounded-full overflow-hidden">
-                        <div className="h-full w-4/5 bg-[#5260FE] rounded-full" />
+                        <div className="h-full w-[75%] bg-[#5260FE] rounded-full" />
                     </div>
                 </div>
 

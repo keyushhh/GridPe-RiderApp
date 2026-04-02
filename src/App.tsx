@@ -7,10 +7,6 @@ import OnboardingVehicle from './pages/OnboardingVehicle'
 import OnboardingHub from './pages/OnboardingHub'
 import OnboardingGuidelines from './pages/OnboardingGuidelines'
 import OnboardingKYC from './pages/OnboardingKYC'
-import OnboardingKYCUpload from './pages/OnboardingKYCUpload'
-import OnboardingKYCSelfie from './pages/OnboardingKYCSelfie'
-import OnboardingKYCReview from './pages/OnboardingKYCReview'
-import OnboardingKYCSuccess from './pages/OnboardingKYCSuccess'
 import OnboardingStepTwo from './pages/OnboardingStepTwo'
 import FetchingVehicleDetails from './pages/FetchingVehicleDetails'
 import DetailsFetchedSuccess from './pages/DetailsFetchedSuccess'
@@ -39,9 +35,10 @@ import GlobalCustomToaster from './components/GlobalCustomToaster'
 import { useAuth } from './hooks/useAuth'
 import { useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import logo from './assets/gridpe-logo.svg'
 
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
-    const { kycStatus, riderUuid, loading } = useAuth();
+    const { kycStatus, riderUuid, isOnboarded, loading } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -54,16 +51,27 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
                                  location.pathname === '/otp' ||
                                  location.pathname === '/work-city';
 
-        if (kycStatus === 'verified' && isOnboardingPath) {
-            console.log('AuthGuard: Verified rider detected on onboarding path. Redirecting to dashboard.');
-            navigate('/dashboard', { replace: true });
+        if ((kycStatus === 'verified' || kycStatus === 'in_review') && isOnboardingPath) {
+            if (!isOnboarded && location.pathname !== '/onboarding/identity-info') {
+                console.log('AuthGuard: Verified rider needs operational briefing. Redirecting to identity-info.');
+                navigate('/onboarding/identity-info', { replace: true });
+            } else if (isOnboarded) {
+                console.log('AuthGuard: Verified/In-Review rider detected on onboarding path. Redirecting to dashboard.');
+                navigate('/dashboard', { replace: true });
+            }
+        } else if (riderUuid && (!kycStatus || kycStatus === 'pending') && !isOnboardingPath) {
+            console.log('AuthGuard: Pending rider detected outside onboarding. Redirecting to onboarding.');
+            navigate('/work-city', { replace: true });
+        } else if (!riderUuid && !isOnboardingPath) {
+            console.log('AuthGuard: Logged out user. Redirecting to login.');
+            navigate('/', { replace: true });
         }
-    }, [kycStatus, loading, location.pathname, navigate]);
+    }, [kycStatus, riderUuid, loading, location.pathname, navigate]);
 
     if (loading) {
         return (
-            <div className="h-screen w-full flex items-center justify-center bg-white">
-                <div className="w-12 h-12 border-4 border-[#5260FE] border-t-transparent rounded-full animate-spin" />
+            <div className="h-[100dvh] w-full flex items-center justify-center bg-white">
+                <img src={logo} alt="GridPe" className="w-[120px] animate-pulse" />
             </div>
         );
     }
@@ -91,10 +99,6 @@ function App() {
                             <Route path="/onboarding/step-2" element={<OnboardingHub />} />
                             <Route path="/onboarding/guidelines" element={<OnboardingGuidelines />} />
                             <Route path="/onboarding/kyc" element={<OnboardingKYC />} />
-                            <Route path="/onboarding/kyc-upload" element={<OnboardingKYCUpload />} />
-                            <Route path="/onboarding/kyc-selfie" element={<OnboardingKYCSelfie />} />
-                            <Route path="/onboarding/kyc-review" element={<OnboardingKYCReview />} />
-                            <Route path="/onboarding/kyc-success" element={<OnboardingKYCSuccess />} />
                             <Route path="/onboarding/identity-info" element={<IdentityVerificationInfo />} />
                             <Route path="/order-delivered" element={<OrderDelivered />} />
                             <Route path="/dashboard" element={<Home />} />
