@@ -276,6 +276,33 @@ const AccountSettings = () => {
         }
     }, [riderUuid]);
 
+    // Listen for Realtime KYC updates
+    useEffect(() => {
+        if (!riderUuid) return;
+
+        const channel = supabase.channel(`kyc_account_settings_watch_${riderUuid}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'riders',
+                    filter: `id=eq.${riderUuid}`
+                },
+                (payload) => {
+                    console.log('[AccountSettings] KYC Status updated in DB:', payload.new.kyc_status);
+                    if (payload.new.kyc_status === 'verified') {
+                        refreshProfile();
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [riderUuid, refreshProfile]);
+
     useEffect(() => {
         if (activeTab === "Help & Support") {
             fetchOngoingHelp();
@@ -1089,13 +1116,23 @@ const AccountSettings = () => {
                                         className="mt-[3px] font-medium text-[14px] leading-tight"
                                         style={{ color: kycStatus === "verified" ? "#1CB956" : kycStatus === "in_review" ? "#FFCC00" : "#FF3B30" }}
                                     >
-                                        {kycStatus === "verified" ? "Account secured" : kycStatus === "in_review" ? "KYC in progress" : "KYC pending"}
+                                        {kycStatus === "verified" ? "Your account is fully verified" : (kycStatus === "rejected" || kycStatus === "expired") ? "Re-verification required." : kycStatus === "in_review" ? "KYC in progress" : "KYC pending"}
                                     </span>
                                 </div>
                             </div>
 
-                            <button className="absolute top-[21.5px] right-[18px] w-[118px] h-[39px] rounded-full bg-black text-white text-[12px] font-medium flex items-center justify-center transition-transform active:scale-95">
-                                Check Security
+                            <button 
+                                onClick={() => {
+                                    if (kycStatus !== 'verified') {
+                                        const diditUrl = `https://verify.didit.me/u/2HbisVl2RnS8ftFtVUAt5g?vendor_data=${riderUuid}`;
+                                        window.location.href = diditUrl;
+                                    } else {
+                                        setActiveTab('Security');
+                                    }
+                                }}
+                                className="absolute top-[21.5px] right-[18px] w-[118px] h-[39px] rounded-full bg-black text-white text-[12px] font-medium flex items-center justify-center transition-transform active:scale-95"
+                            >
+                                {kycStatus === "verified" ? "View Details" : "Check Security"}
                             </button>
                         </div>
 
