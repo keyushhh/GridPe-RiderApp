@@ -378,6 +378,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('rider_has_passkeys');
         localStorage.removeItem('rider_is_onboarded');
         
+        // Ensure absolutely no Didit cache keys stick around between Rider accounts.
+        Object.keys(localStorage).forEach(key => {
+            if (key.toLowerCase().includes('didit')) {
+                localStorage.removeItem(key);
+            }
+        });
+
         // Reset all React state
         setRiderUuid(null);
         setRiderId(null);

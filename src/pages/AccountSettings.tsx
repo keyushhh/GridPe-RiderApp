@@ -1122,10 +1122,41 @@ const AccountSettings = () => {
                             </div>
 
                             <button 
-                                onClick={() => {
+                                onClick={async () => {
                                     if (kycStatus !== 'verified') {
-                                        const diditUrl = `https://verify.didit.me/u/2HbisVl2RnS8ftFtVUAt5g?vendor_data=${riderUuid}`;
-                                        window.location.href = diditUrl;
+                                        try {
+                                            // 1. Double check actual DB persistence
+                                            const { data: currentRider } = await supabase
+                                                .from('riders')
+                                                .select('kyc_status')
+                                                .eq('id', riderUuid)
+                                                .single();
+
+                                            if (currentRider?.kyc_status === 'verified') {
+                                                refreshProfile(); // Sync local state
+                                                setActiveTab('Security');
+                                                return;
+                                            }
+
+                                            const isNewSession = !currentRider?.kyc_status || ['pending', 'incomplete'].includes(currentRider.kyc_status);
+
+                                            // 2. Wipe Local didit caching
+                                            if (isNewSession) {
+                                                Object.keys(localStorage).forEach(key => {
+                                                    if (key.toLowerCase().includes('didit')) {
+                                                        localStorage.removeItem(key);
+                                                    }
+                                                });
+                                            }
+
+                                            // 3. Prep UniLink
+                                            const uniqueVendorData = isNewSession ? `${riderUuid}_${Date.now()}` : riderUuid;
+                                            const clearCacheParam = isNewSession ? '&clear_cache=true' : '';
+                                            const diditUrl = `https://verify.didit.me/u/2HbisVl2RnS8ftFtVUAt5g?vendor_data=${uniqueVendorData}${clearCacheParam}`;
+                                            window.location.href = diditUrl;
+                                        } catch (err) {
+                                            console.error('Failed verification launch pre-flight', err);
+                                        }
                                     } else {
                                         setActiveTab('Security');
                                     }

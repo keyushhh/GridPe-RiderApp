@@ -139,6 +139,30 @@ const OnboardingKYC = () => {
                         if (!selectedDoc || !riderUuid || isSubmitting) return;
                         setIsSubmitting(true);
                         try {
+                            // 1. Double check DB persistence before launching Didit
+                            const { data: currentRider } = await supabase
+                                .from('riders')
+                                .select('kyc_status')
+                                .eq('id', riderUuid)
+                                .single();
+
+                            if (currentRider?.kyc_status === 'verified') {
+                                navigate('/dashboard', { replace: true });
+                                return;
+                            }
+
+                            const isNewSession = !currentRider?.kyc_status || ['pending', 'incomplete'].includes(currentRider.kyc_status);
+
+                            // 2. Wipe local caching related to Didit or verify sessions to stop sticky tokens
+                            if (isNewSession) {
+                                Object.keys(localStorage).forEach(key => {
+                                    if (key.toLowerCase().includes('didit')) {
+                                        localStorage.removeItem(key);
+                                    }
+                                });
+                            }
+
+                            // 3. Mark as in review and prep UniLink with unique nonce
                             const { error } = await supabase
                                 .from('riders')
                                 .update({
@@ -151,7 +175,9 @@ const OnboardingKYC = () => {
                             
                             login(riderUuid, riderId || '', fullName || '', 'in_review');
 
-                            const diditUrl = `https://verify.didit.me/u/2HbisVl2RnS8ftFtVUAt5g?vendor_data=${riderUuid}`;
+                            const uniqueVendorData = isNewSession ? `${riderUuid}_${Date.now()}` : riderUuid;
+                            const clearCacheParam = isNewSession ? '&clear_cache=true' : '';
+                            const diditUrl = `https://verify.didit.me/u/2HbisVl2RnS8ftFtVUAt5g?vendor_data=${uniqueVendorData}${clearCacheParam}`;
                             window.location.href = diditUrl;
                         } catch (err) {
                             console.error('KYC update failed', err);
