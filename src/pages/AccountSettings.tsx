@@ -1042,7 +1042,7 @@ const AccountSettings = () => {
                 </div>
             </div>
 
-            <div className="w-[362px] flex flex-col items-center flex-1">
+            <div className="w-full max-w-[362px] flex flex-col items-center flex-1 overflow-y-auto no-scrollbar pb-10 mx-auto">
                 {activeTab === "Home" && (
                     <>
                         <div className="mt-[18px] w-[83px] h-[83px] rounded-full border border-gray-100 overflow-hidden shrink-0">
@@ -1285,7 +1285,7 @@ const AccountSettings = () => {
                 )}
 
                 {activeTab === "Security" && (
-                    <div className="w-full flex flex-col items-start px-0 flex-1">
+                    <div className="w-full flex flex-col items-start px-0">
                         {securityStep === "list" ? (
                             <>
                                 <div className="mt-[19px] flex items-center">
@@ -2289,7 +2289,7 @@ const AccountSettings = () => {
                 )}
 
                 {activeTab === "Help & Support" && (
-                    <div className="w-full flex-1 flex flex-col items-start px-0 overflow-y-auto no-scrollbar pb-10">
+                    <div className="w-full flex flex-col items-start px-0">
                         {/* Header: Icon + Title */}
                         <div className="mt-[19px] flex items-center shrink-0">
                             <img src={helpCircleIcon} alt="Help" className="w-[24px] h-[24px]" />
@@ -2399,7 +2399,7 @@ const AccountSettings = () => {
                                         <button 
                                             onClick={handleRaiseTicket}
                                             disabled={isLoadingSupport}
-                                            className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[15px] flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50"
+                                            className="w-full h-[48px] rounded-full bg-black text-white font-medium text-[15px] flex items-center justify-center transition-transform active:scale-95 disabled:opacity-50"
                                         >
                                             {isLoadingSupport ? "Processing..." : "Raise a New Ticket"}
                                         </button>
@@ -2480,7 +2480,7 @@ const AccountSettings = () => {
                 )}
 
                 {activeTab === "Banking" && (
-                    <div className="w-full flex-1 flex flex-col items-start px-0">
+                    <div className="w-full flex flex-col items-start px-0">
                         {bankingStep === "list" ? (
                             <>
                                 {/* Initial Banking View */}
