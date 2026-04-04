@@ -5,7 +5,7 @@
     "source.sortMembers": "explicit"
   },
   "css.lint.unknownAtRules": "ignore",
-  "deno.enable": true,
+  "deno.enable": false,
   "deno.unstable": [],
   "deno.enablePaths": [
     "supabase/functions"
