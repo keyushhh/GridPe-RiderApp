@@ -9,5 +9,6 @@
   "deno.unstable": [],
   "deno.enablePaths": [
     "supabase/functions"
-  ]
+  ],
+  "java.configuration.updateBuildConfiguration": "interactive"
 }
