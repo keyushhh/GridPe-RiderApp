@@ -2,9 +2,18 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 import { defineConfig } from 'vite'
 
+const removeCrossoriginPlugin = () => {
+    return {
+        name: 'no-attribute-crossorigin',
+        transformIndexHtml(html: string) {
+            return html.replace(/ crossorigin/g, '');
+        }
+    }
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
-    plugins: [react()],
+    plugins: [react(), removeCrossoriginPlugin()],
     resolve: {
         alias: {
             "@": path.resolve(__dirname, "./src"),

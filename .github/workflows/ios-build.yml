@@ -16,39 +16,46 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
 
       - name: Install JS Dependencies
-        run: npm ci
+        run: npm install --legacy-peer-deps
 
       - name: Build Web Assets
         run: npm run build
 
-      - name: Ensure iOS Platform
-        # Capacitor check if ios exists, otherwise adds it
+      - name: Ensure iOS Platform and Sync
         run: |
           if [ ! -d "ios" ]; then
             npx cap add ios
-          else
-            echo "iOS platform already exists"
           fi
+          npx cap sync ios
 
-      - name: Sync iOS Project
-        run: npx cap sync ios
-
-      - name: Set App Display Name
+      - name: Patch capacitor.config.json
         run: |
-          plutil -replace CFBundleDisplayName -string "Grid.Pe Rider App" ios/App/App/Info.plist
-          plutil -replace CFBundleName -string "GridPeRider" ios/App/App/Info.plist
+          python3 -c '
+          import json, os
+          path = "ios/App/App/capacitor.config.json"
+          if os.path.exists(path):
+              with open(path, "r") as f: data = json.load(f)
+              if "server" in data: del data["server"]
+              if "ios" not in data: data["ios"] = {}
+              data["ios"]["webContentsDebuggingEnabled"] = True
+              with open(path, "w") as f: json.dump(data, f, indent=2)
+          else:
+              print("capacitor.config.json not found")
+          '
 
-      - name: Install CocoaPods
-        # Capacitor 6 puts Podfile inside ios/App
+      - name: Patch Info.plist
+        run: |
+          plutil -replace CAPACITOR_DEBUG -string "false" ios/App/App/Info.plist
+          plutil -replace CFBundleDisplayName -string "Grid.Pe Rider App" ios/App/App/Info.plist
+
+      - name: Resolve SPM Dependencies
         working-directory: ios/App
-        run: pod install
+        run: xcodebuild -resolvePackageDependencies -workspace App.xcworkspace -scheme App
 
       - name: Build iOS App (Release)
         working-directory: ios/App
-        # Building the App in Release configuration so it ignores local dev server
         run: |
           xcodebuild build \
             -workspace App.xcworkspace \
@@ -56,15 +63,16 @@ jobs:
             -configuration Release \
             -sdk iphoneos \
             CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
             SYMROOT=$(PWD)/build
 
       - name: Package Payload to IPA
         working-directory: ios/App
         run: |
           mkdir -p Payload
-          # Move the compiled app bundle into the Payload folder
           mv build/Release-iphoneos/App.app Payload/
-          # Compress Payload folder into .ipa file
           zip -qr GridPeRider.ipa Payload
 
       - name: Upload IPA Artifact
