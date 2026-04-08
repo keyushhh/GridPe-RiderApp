@@ -7,25 +7,34 @@ jobs:
   build-unsigned-ipa:
     name: Build IPA
     runs-on: macos-latest
-    
+
     steps:
-      - name: Checkout Code
+      # ──────────────────────────────────────────────
+      # 1. Checkout & Setup
+      # ──────────────────────────────────────────────
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Install JS Dependencies
+      # ──────────────────────────────────────────────
+      # 2. Install npm dependencies
+      # ──────────────────────────────────────────────
+      - name: Install npm dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Fix Bin Permissions
+      - name: Fix node_modules bin permissions
         run: chmod -R +x node_modules/.bin || true
 
-      - name: Create Env File
+      # ──────────────────────────────────────────────
+      # 3. Create .env from GitHub Secrets
+      # ──────────────────────────────────────────────
+      - name: Create .env file
         run: |
-          cat <<EOF > .env
+          cat > .env << 'ENVEOF'
           VITE_MAPBOX_TOKEN=${{ secrets.VITE_MAPBOX_TOKEN }}
           VITE_MAPS_API_KEY=${{ secrets.VITE_MAPS_API_KEY }}
           VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}
@@ -37,65 +46,137 @@ jobs:
           VITE_RAZORPAY_KEY_ID=${{ secrets.VITE_RAZORPAY_KEY_ID }}
           VITE_CORBADO_PROJECT_ID=${{ secrets.VITE_CORBADO_PROJECT_ID }}
           VITE_CORBADO_API_SECRET=${{ secrets.VITE_CORBADO_API_SECRET }}
-          EOF
+          ENVEOF
 
-      - name: Build Web Assets
+      # ──────────────────────────────────────────────
+      # 4. Build web app (production)
+      #    Skip tsc type-check, run vite build directly
+      # ──────────────────────────────────────────────
+      - name: Build web app (production)
         run: npx vite build
 
-      - name: Ensure iOS Platform and Sync
+      - name: Verify dist output
         run: |
-          npm install @capacitor/ios --legacy-peer-deps
-          if [ ! -d "ios" ]; then
-            npx cap add ios
-          fi
+          echo "--- dist contents ---"
+          ls -la dist/
+          echo "--- checking index.html ---"
+          head -20 dist/index.html
+
+      # ──────────────────────────────────────────────
+      # 5. Sync Capacitor iOS
+      #    cap add creates ios/ from scratch (SPM-based, no CocoaPods)
+      #    cap sync copies dist/ into the native project
+      # ──────────────────────────────────────────────
+      - name: Sync Capacitor iOS
+        run: |
+          npx cap add ios
           npx cap sync ios
 
-      - name: Patch capacitor.config.json
+      # ──────────────────────────────────────────────
+      # 6. Patch capacitor.config.json
+      #    - Remove any "server" key (prevents dev-server connection)
+      #    - Enable webContentsDebuggingEnabled for Safari inspector
+      # ──────────────────────────────────────────────
+      - name: Ensure no dev-server URL in Capacitor config
         run: |
           python3 -c '
-          import json, os
+          import json
           path = "ios/App/App/capacitor.config.json"
-          if os.path.exists(path):
-              with open(path, "r") as f: data = json.load(f)
-              if "server" in data: del data["server"]
-              if "ios" not in data: data["ios"] = {}
-              data["ios"]["webContentsDebuggingEnabled"] = True
-              with open(path, "w") as f: json.dump(data, f, indent=2)
-          else:
-              print("capacitor.config.json not found")
+          with open(path, "r") as f:
+              data = json.load(f)
+          data.pop("server", None)
+          if "ios" not in data:
+              data["ios"] = {}
+          data["ios"]["webContentsDebuggingEnabled"] = True
+          with open(path, "w") as f:
+              json.dump(data, f, indent=2)
+          print("Patched capacitor.config.json:")
+          print(json.dumps(data, indent=2))
           '
 
-      - name: Patch Info.plist
+      # ──────────────────────────────────────────────
+      # 7. Patch Info.plist
+      #    - Add CAPACITOR_DEBUG = false (key doesn't exist by default, use -insert)
+      #    - Set CFBundleDisplayName
+      # ──────────────────────────────────────────────
+      - name: Set app display name & disable debug mode
         run: |
-          plutil -replace CAPACITOR_DEBUG -string "false" ios/App/App/Info.plist
-          plutil -replace CFBundleDisplayName -string "Grid.Pe Rider App" ios/App/App/Info.plist
+          PLIST="ios/App/App/Info.plist"
+          # CAPACITOR_DEBUG doesn't exist in the default plist, so insert it
+          plutil -insert CAPACITOR_DEBUG -string "false" "$PLIST" 2>/dev/null || \
+            plutil -replace CAPACITOR_DEBUG -string "false" "$PLIST"
+          plutil -replace CFBundleDisplayName -string "Grid.Pe Rider App" "$PLIST"
+          echo "--- Info.plist patched ---"
+          plutil -p "$PLIST"
 
-      - name: Resolve SPM Dependencies
+      # ──────────────────────────────────────────────
+      # 8. Verify web assets were copied into iOS bundle
+      # ──────────────────────────────────────────────
+      - name: Verify iOS web assets
+        run: |
+          echo "--- ios/App/App/public contents ---"
+          ls -la ios/App/App/public/ || echo "public dir missing!"
+          echo "--- checking for index.html ---"
+          cat ios/App/App/public/index.html | head -20 || echo "index.html missing!"
+
+      # ──────────────────────────────────────────────
+      # 9. Resolve SPM dependencies first
+      #    Capacitor 6+ uses SPM (no Podfile, no .xcworkspace)
+      #    Must use -project App.xcodeproj (NOT -workspace)
+      # ──────────────────────────────────────────────
+      - name: Resolve Swift Package Manager dependencies
         working-directory: ios/App
-        run: xcodebuild -resolvePackageDependencies -workspace App.xcworkspace -scheme App
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project App.xcodeproj \
+            -scheme App
 
-      - name: Build iOS App (Release)
+      # ──────────────────────────────────────────────
+      # 10. Build Xcode project (Release, unsigned)
+      # ──────────────────────────────────────────────
+      - name: Build Xcode project (Release)
         working-directory: ios/App
         run: |
           xcodebuild build \
-            -workspace App.xcworkspace \
+            -project App.xcodeproj \
             -scheme App \
             -configuration Release \
             -sdk iphoneos \
+            -destination "generic/platform=iOS" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
-            SYMROOT=$(PWD)/build
+            SYMROOT=$(pwd)/build
 
-      - name: Package Payload to IPA
+      # ──────────────────────────────────────────────
+      # 11. Verify .app bundle before packaging
+      # ──────────────────────────────────────────────
+      - name: Verify .app bundle contents
+        working-directory: ios/App
+        run: |
+          echo "--- Build output ---"
+          ls -la build/Release-iphoneos/
+          echo "--- App bundle contents ---"
+          ls -la build/Release-iphoneos/App.app/ | head -20
+          echo "--- Check for index.html inside bundle ---"
+          find build/Release-iphoneos/App.app -name "index.html" || echo "WARNING: index.html not found in .app bundle!"
+
+      # ──────────────────────────────────────────────
+      # 12. Package IPA
+      # ──────────────────────────────────────────────
+      - name: Package IPA
         working-directory: ios/App
         run: |
           mkdir -p Payload
           mv build/Release-iphoneos/App.app Payload/
           zip -qr GridPeRider.ipa Payload
+          echo "IPA size: $(du -h GridPeRider.ipa | cut -f1)"
 
-      - name: Upload IPA Artifact
+      # ──────────────────────────────────────────────
+      # 13. Upload
+      # ──────────────────────────────────────────────
+      - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: GridPeRider-IPA
