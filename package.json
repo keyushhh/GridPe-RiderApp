@@ -13,6 +13,7 @@
         "@capacitor/android": "^8.3.0",
         "@capacitor/cli": "^8.3.0",
         "@capacitor/core": "^8.3.0",
+        "@capacitor/ios": "^8.3.0",
         "@corbado/connect-react": "^0.16.0",
         "@corbado/web-js": "^3.6.0",
         "@dotlottie/react-player": "^1.6.19",
