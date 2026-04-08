@@ -40,7 +40,7 @@ jobs:
           EOF
 
       - name: Build Web Assets
-        run: npm run build
+        run: npx vite build
 
       - name: Ensure iOS Platform and Sync
         run: |
