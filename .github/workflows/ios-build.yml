@@ -18,7 +18,10 @@ jobs:
           node-version: 22
 
       - name: Install JS Dependencies
-        run: npm install --legacy-peer-deps
+        run: npm ci --legacy-peer-deps
+
+      - name: Fix Bin Permissions
+        run: chmod -R +x node_modules/.bin || true
 
       - name: Build Web Assets
         run: npm run build
