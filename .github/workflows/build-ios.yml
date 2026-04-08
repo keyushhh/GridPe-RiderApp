@@ -1,0 +1,75 @@
+name: Build Unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-unsigned-ipa:
+    name: Build IPA
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install JS Dependencies
+        run: npm ci
+
+      - name: Build Web Assets
+        run: npm run build
+
+      - name: Ensure iOS Platform
+        # Capacitor check if ios exists, otherwise adds it
+        run: |
+          if [ ! -d "ios" ]; then
+            npx cap add ios
+          else
+            echo "iOS platform already exists"
+          fi
+
+      - name: Sync iOS Project
+        run: npx cap sync ios
+
+      - name: Set App Display Name
+        run: |
+          plutil -replace CFBundleDisplayName -string "Grid.Pe Rider App" ios/App/App/Info.plist
+          plutil -replace CFBundleName -string "GridPeRider" ios/App/App/Info.plist
+
+      - name: Install CocoaPods
+        # Capacitor 6 puts Podfile inside ios/App
+        working-directory: ios/App
+        run: pod install
+
+      - name: Build iOS App (Release)
+        working-directory: ios/App
+        # Building the App in Release configuration so it ignores local dev server
+        run: |
+          xcodebuild build \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            SYMROOT=$(PWD)/build
+
+      - name: Package Payload to IPA
+        working-directory: ios/App
+        run: |
+          mkdir -p Payload
+          # Move the compiled app bundle into the Payload folder
+          mv build/Release-iphoneos/App.app Payload/
+          # Compress Payload folder into .ipa file
+          zip -qr GridPeRider.ipa Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GridPeRider-IPA
+          path: ios/App/GridPeRider.ipa
+          retention-days: 7
