@@ -23,6 +23,18 @@
         "paths": {
             "@/*": [
                 "./src/*"
+            ],
+            "react-native": [
+                "./src/utils/mocks/react-native.ts"
+            ],
+            "react-native-sim-cards-manager": [
+                "./src/utils/mocks/sim-cards-manager.ts"
+            ],
+            "react-native-device-info": [
+                "./src/utils/mocks/sim-cards-manager.ts"
+            ],
+            "@react-native-community/netinfo": [
+                "./src/utils/mocks/netinfo.ts"
             ]
         }
     },
