@@ -44,6 +44,7 @@ jobs:
 
       - name: Ensure iOS Platform and Sync
         run: |
+          npm install @capacitor/ios --legacy-peer-deps
           if [ ! -d "ios" ]; then
             npx cap add ios
           fi
