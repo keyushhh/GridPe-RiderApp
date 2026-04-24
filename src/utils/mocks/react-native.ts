@@ -1,6 +1,6 @@
 export const Linking = {
-    openURL: async () => {},
-    sendIntent: async () => {}
+    openURL: async (url: string) => {},
+    sendIntent: async (action: string, extras?: any) => {}
 };
 
 export const Platform = {
